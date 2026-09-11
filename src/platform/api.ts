@@ -1,4 +1,5 @@
 import { defaultSettings, initialEntities } from "./seed";
+import { SESSION_COOKIE, SIGNED_OUT_COOKIE, SESSION_SECONDS, randomToken, digest, passwordHash, equalHash, cookie, readCookie } from "./auth";
 type Env = { DB: any; BUCKET: any; ADMIN_BOOTSTRAP_KEY?: string };
 const json = (data: unknown, status = 200) =>
   Response.json(data, {
@@ -65,7 +66,10 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
     const entities = rows.map((r: any) => ({ ...JSON.parse(r.data), id: r.id, kind: r.kind }));
     // Seed examples are read-only until an admin explicitly imports them.
     const catalog = entities;
-    const identity = request.headers.get("oai-authenticated-user-id");
+    const sessionToken = readCookie(request, SESSION_COOKIE);
+    const savedSession = sessionToken ? await one("SELECT user_id FROM sessions WHERE token_hash=? AND expires_at>?", await digest(sessionToken), Date.now()) : null;
+    // An explicit app session/sign-out overrides any legacy platform identity.
+    const identity = savedSession?.user_id || (!sessionToken && !readCookie(request, SIGNED_OUT_COOKIE) ? request.headers.get("oai-authenticated-user-id") : null);
     let user = identity ? await one("SELECT * FROM users WHERE id=?", identity) : null;
     if (request.method !== "GET" && request.method !== "HEAD") {
       const origin = request.headers.get("origin");
@@ -85,10 +89,90 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
     };
     if (path === "/session")
       return json({
-        user: user ? { ...user, active: active(user) } : null,
+        user: user ? { ...user, active: active(user), hasPassword: !!(await one("SELECT user_id FROM credentials WHERE user_id=?", user.id)) } : null,
         signedIn: !!identity,
         adminConfigured: !!(await one("SELECT id FROM users WHERE role='admin' LIMIT 1")),
       });
+    const issueSession = async (userId: string) => {
+      const token = randomToken();
+      await run("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)", await digest(token), userId, Date.now() + SESSION_SECONDS * 1000);
+      const response = json({ ok: true });
+      response.headers.append("Set-Cookie", cookie(SESSION_COOKIE, token));
+      response.headers.append("Set-Cookie", cookie(SIGNED_OUT_COOKIE, "", 0));
+      return response;
+    };
+    if (path === "/auth/legacy" && request.method === "POST") {
+      const form = await request.formData();
+      const returnTo = form.get("returnTo") === "/admin" ? "/admin" : "/member?tab=profile";
+      if (sessionToken) await run("DELETE FROM sessions WHERE token_hash=?", await digest(sessionToken));
+      const response = new Response(null, { status: 303, headers: { Location: "/signin-with-chatgpt?return_to=" + encodeURIComponent(returnTo), "Cache-Control": "no-store" } });
+      response.headers.append("Set-Cookie", cookie(SESSION_COOKIE, "", 0));
+      response.headers.append("Set-Cookie", cookie(SIGNED_OUT_COOKIE, "", 0));
+      return response;
+    }
+    if (path === "/auth/logout" && request.method === "POST") {
+      if (sessionToken) await run("DELETE FROM sessions WHERE token_hash=?", await digest(sessionToken));
+      const response = json({ ok: true });
+      response.headers.append("Set-Cookie", cookie(SESSION_COOKIE, "", 0));
+      response.headers.append("Set-Cookie", cookie(SIGNED_OUT_COOKIE, "1"));
+      return response;
+    }
+    if (["/auth/signup", "/auth/login", "/auth/password"].includes(path) && request.method === "POST") {
+      if (path === "/auth/password") mustUser();
+      const b = await request.json() as any;
+      const email = clean(path === "/auth/password" ? user.email : b.email, 254).toLowerCase();
+      const password = typeof b.password === "string" ? b.password : "";
+      if (b.currentPassword && (typeof b.currentPassword !== "string" || b.currentPassword.length > 256)) fail("Your current password is incorrect.", 401);
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail("Enter a valid email address.");
+      if (password.length > 256 || !password.length) fail("Enter a password of up to 256 characters.");
+      const timestamp = Date.now();
+      // Atomic fixed-window limits: email and, when provided by the edge, client IP.
+      const subjects = ["email:" + email];
+      const ip = request.headers.get("cf-connecting-ip");
+      if (ip) subjects.push("ip:" + ip);
+      for (const subject of subjects) {
+        const key = await digest(subject);
+        const attempt = await one("INSERT INTO auth_attempts(key,count,expires_at) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET count=CASE WHEN expires_at<=? THEN 1 ELSE count+1 END, expires_at=CASE WHEN expires_at<=? THEN ? ELSE expires_at END RETURNING count", key, timestamp + 900000, timestamp, timestamp, timestamp + 900000);
+        if (attempt.count > (subject.startsWith("ip:") ? 60 : 10)) fail("Too many attempts. Please try again in 15 minutes.", 429);
+      }
+      const existing = await one("SELECT * FROM credentials WHERE email=?", email);
+      if (path === "/auth/login") {
+        const hash = await passwordHash(password, existing?.salt || "slkd-unknown-account-timing-salt");
+        if (!existing || !equalHash(hash, existing.password_hash)) fail("The email or password is incorrect.", 401);
+        const account = await one("SELECT * FROM users WHERE id=?", existing.user_id);
+        if (!account || account.disabled) fail("Your account is paused. Please contact the team.", 403);
+        return issueSession(account.id);
+      }
+      if (password.length < 12) fail("Use a password with at least 12 characters.");
+      const salt = randomToken();
+      const hash = await passwordHash(password, salt);
+      if (path === "/auth/signup") {
+        const name = clean(b.name, 120);
+        if (name.length < 2 || b.consent !== true) fail("Enter your full name and accept the privacy notice.");
+        // Never attach an unverified signup to an existing member or administrator by email.
+        if (existing || await one("SELECT id FROM users WHERE lower(email)=? LIMIT 1", email)) fail("An account already uses this email. Sign in, or contact the team for help.", 409);
+        const userId = uid();
+        try {
+          await db.batch([
+            db.prepare("INSERT INTO users(id,email,name,created_at) VALUES(?,?,?,?)").bind(userId, email, name, now()),
+            db.prepare("INSERT INTO credentials(user_id,email,salt,password_hash) VALUES(?,?,?,?)").bind(userId, email, salt, hash),
+          ]);
+        } catch (e: any) {
+          if (/UNIQUE/.test(e.message)) fail("An account already uses this email. Please sign in.", 409);
+          throw e;
+        }
+        return issueSession(userId);
+      }
+      const own = await one("SELECT * FROM credentials WHERE user_id=?", user.id);
+      if (own && (!b.currentPassword || !equalHash(await passwordHash(String(b.currentPassword), own.salt), own.password_hash))) fail("Your current password is incorrect.", 401);
+      if (existing && existing.user_id !== user.id) fail("This email is already in use. Please contact the team.", 409);
+      await db.batch([
+        db.prepare("INSERT INTO credentials(user_id,email,salt,password_hash) VALUES(?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET salt=excluded.salt,password_hash=excluded.password_hash").bind(user.id, email, salt, hash),
+        db.prepare("DELETE FROM sessions WHERE user_id=?").bind(user.id),
+      ]);
+      await log(user.id, "account.password", user.id);
+      return issueSession(user.id);
+    }
     if (path === "/public")
       return json({
         settings: {

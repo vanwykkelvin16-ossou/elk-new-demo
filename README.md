@@ -13,11 +13,11 @@ Independent redesign based on `vanwykkelvin16-ossou/so-love-vouchers` and SLKD's
 
 ## Demo access and activation
 
-The Sites deployment is owner-private. Sign-in currently uses the Sites platform's ChatGPT identity, not a separate email/password account. A signed-in visitor is registered as an inactive member. The first administrator enters the private setup code configured as `ADMIN_BOOTSTRAP_KEY`; never commit that code.
+Visitors can create an SLKD account with an email and password; ChatGPT is not required. Accounts start with inactive membership. Existing platform accounts keep their memberships and history: sign in using the earlier demo option once, then set a password under My details. Password setup never links an anonymous signup to an existing account by email. Passwords are salted with PBKDF2; opaque sessions are stored hashed in D1 and sent only in Secure, HttpOnly, SameSite cookies. Authentication has server-side rate limits and same-origin checks. Changing a password revokes existing app sessions. Password reset/email verification delivery is not configured; the login screen directs account-help requests to the team. The first administrator enters the private setup code configured as `ADMIN_BOOTSTRAP_KEY`; never commit that code.
 
 The admin can independently verify a membership payment to activate one year of access. No card processor is connected. Donation forms record pledges, sponsorship forms record enquiries, and the contact form saves requests in the admin inbox; these forms do not send email or charge cards.
 
-Before public/customer launch, connect the chosen customer identity provider and payment processor, verify current membership pricing and banking details, replace the example voucher, confirm event dates, and review the privacy notice. The configured R240 annual demo price came from the linked SLKD membership form and is editable. Upcoming event cards accept expressions of interest until dates are set.
+Before public/customer launch, connect the chosen payment processor and account-recovery email service, verify current membership pricing and banking details, replace the example voucher, confirm event dates, and review the privacy notice. The configured R240 annual demo price came from the linked SLKD membership form and is editable. Upcoming event cards accept expressions of interest until dates are set.
 
 ## Source preservation
 
@@ -43,4 +43,8 @@ Community photos: SLKD's website (`Angus crowd Krugersdorp.jpg`, gallery images 
 
 ## GitHub destination
 
-The completed independent source is stored in `vanwykkelvin16-ossou/elk-new-demo`. The original `so-love-vouchers` repository remains unchanged.
+All new work is stored in `vanwykkelvin16-ossou/elk-new-demo`. No source remote points to the original repository.
+
+## Navigation
+
+The shared app shell stays mounted across routes. Internal links use TanStack navigation, including event details and member/admin tabs. Initial account checks show a neutral loading state rather than briefly displaying a sign-in form.

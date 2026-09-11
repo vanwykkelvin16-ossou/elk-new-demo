@@ -1,5 +1,5 @@
 import { useEffect, useState, createContext, useContext } from "react";
-import { useLocation } from "@tanstack/react-router";
+import { useLocation, useRouter } from "@tanstack/react-router";
 import {
   ArrowUpRight,
   ArrowRight,
@@ -73,21 +73,34 @@ const adminNav = [
   ["settings", "Website settings", Settings],
   ["activity", "Activity log", Activity],
 ] as const;
+// Keep document state while navigating; modified clicks and external links stay native.
+function AppLink({ href, onClick, children, ...props }: any) {
+  const router = useRouter();
+  return <a href={href} {...props} onClick={(event) => {
+    onClick?.(event);
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || props.target || props.download !== undefined || !href?.startsWith("/") || href.startsWith("//") || /^\/(sign(in|out)-with-chatgpt|api)\b/.test(href)) return;
+    event.preventDefault();
+    void router.navigate({ href, resetScroll: href.split("?")[0] !== router.state.location.pathname });
+  }}>{children}</a>;
+}
+function SessionLoading() {
+  return <div className="page-wrap" aria-busy="true" role="status"><div className="account-loading"><Heart size={28} /><span>Opening your account…</span></div></div>;
+}
 function Logo() {
   return (
-    <a href="/" className="logo" aria-label="So Love Krugersdorp home">
+    <AppLink href="/" className="logo" aria-label="So Love Krugersdorp home">
       <img src="/brand-heart.png" alt="" />
       <span>
         so love<span>KRUGERSDORP</span>
       </span>
-    </a>
+    </AppLink>
   );
 }
 function Button({ children, href, className = "", ...props }: any) {
   return href ? (
-    <a className={"button " + className} href={href} {...props}>
+    <AppLink className={"button " + className} href={href} {...props}>
       {children}
-    </a>
+    </AppLink>
   ) : (
     <button className={"button " + className} {...props}>
       {children}
@@ -140,32 +153,33 @@ function Badge({ children, tone = "" }: any) {
   return <span className={"badge " + tone}>{children}</span>;
 }
 function Header() {
-  const { session, path } = useSite();
+  const { session, path, search } = useSite();
   const [open, setOpen] = useState(false);
+  useEffect(() => setOpen(false), [path, search.toString()]);
   return (
     <>
       <div className="topbar">
         <span>Rooted in faith. Connected by community.</span>
-        <a href="/sponsor">
+        <AppLink href="/sponsor">
           Make a difference <ArrowUpRight size={13} />
-        </a>
+        </AppLink>
       </div>
       <header className="header">
         <Logo />
         <nav className={open ? "nav open" : "nav"} aria-label="Main navigation">
           {publicNav.map(([href, label]) => (
-            <a key={href} href={href} className={path === href ? "active" : ""}>
+            <AppLink key={href} href={href} className={path === href ? "active" : ""}>
               {label}
-            </a>
+            </AppLink>
           ))}
-          <a className="mobile-only" href="/contact">
+          <AppLink className="mobile-only" href="/contact">
             Contact us
-          </a>
+          </AppLink>
         </nav>
         <div className="header-actions">
-          <a href="/member" className="login-link">
+          <AppLink href="/member" className="login-link">
             {session.user ? "My account" : "Member login"}
-          </a>
+          </AppLink>
           <Button href="/membership">
             Become a member <ArrowUpRight size={16} />
           </Button>
@@ -196,34 +210,34 @@ function Footer() {
         </div>
         <div>
           <h4>Find your place</h4>
-          <a href="/about">Our story</a>
-          <a href="/events">Community events</a>
-          <a href="/businesses">Business directory</a>
-          <a href="/vouchers">Member vouchers</a>
+          <AppLink href="/about">Our story</AppLink>
+          <AppLink href="/events">Community events</AppLink>
+          <AppLink href="/businesses">Business directory</AppLink>
+          <AppLink href="/vouchers">Member vouchers</AppLink>
         </div>
         <div>
           <h4>Make a difference</h4>
-          <a href="/membership">Become a member</a>
-          <a href="/sponsor">Become a sponsor</a>
-          <a href="/donate">Give a donation</a>
-          <a href="/contact">Contact us</a>
+          <AppLink href="/membership">Become a member</AppLink>
+          <AppLink href="/sponsor">Become a sponsor</AppLink>
+          <AppLink href="/donate">Give a donation</AppLink>
+          <AppLink href="/contact">Contact us</AppLink>
         </div>
         <div>
           <h4>Let's connect</h4>
-          <a href={"tel:" + data.settings.phone.replace(/\s/g, "")}>{data.settings.phone}</a>
+          <AppLink href={"tel:" + data.settings.phone.replace(/\s/g, "")}>{data.settings.phone}</AppLink>
           <span>Krugersdorp, Gauteng</span>
-          <a href="/member">
+          <AppLink href="/member">
             Member portal <ArrowUpRight size={14} />
-          </a>
+          </AppLink>
         </div>
       </div>
       <div className="footer-bottom">
         <span>© {new Date().getFullYear()} So Love Krugersdorp</span>
         <div>
-          <a href="/privacy">Privacy</a>
-          <a href="/admin">
+          <AppLink href="/privacy">Privacy</AppLink>
+          <AppLink href="/admin">
             Admin portal <LockKeyhole size={12} />
-          </a>
+          </AppLink>
           <span>Made with love, for our town.</span>
         </div>
       </div>
@@ -255,9 +269,9 @@ function Home() {
             <Button href="/membership">
               Find your place <ArrowUpRight size={18} />
             </Button>
-            <a className="text-link" href="/about">
+            <AppLink className="text-link" href="/about">
               Meet our community <ArrowRight size={17} />
-            </a>
+            </AppLink>
           </div>
           <div className="hero-note">
             <div className="mini-hearts">
@@ -347,7 +361,7 @@ function Home() {
               "/donate",
             ],
           ].map(([n, Icon, title, desc, href]: any) => (
-            <a className="action-card" href={href} key={n}>
+            <AppLink className="action-card" href={href} key={n}>
               <div className="action-top">
                 <Icon />
                 <span>{n}</span>
@@ -355,7 +369,7 @@ function Home() {
               <h3>{title}</h3>
               <p>{desc}</p>
               <ArrowUpRight className="card-arrow" />
-            </a>
+            </AppLink>
           ))}
         </div>
       </section>
@@ -395,9 +409,9 @@ function Home() {
             <Eyebrow>MAKE TIME FOR COMMUNITY</Eyebrow>
             <h2>Better when we're together.</h2>
           </div>
-          <a className="text-link" href="/events">
+          <AppLink className="text-link" href="/events">
             Explore events <ArrowRight size={18} />
-          </a>
+          </AppLink>
         </div>
         <div className="cards-grid">
           {events.length ? (
@@ -435,7 +449,7 @@ function Home() {
 }
 function EventCard({ item }: any) {
   return (
-    <a href={"/events?event=" + item.id} className="event-card">
+    <AppLink href={"/events?event=" + item.id} className="event-card">
       <div className="card-photo">
         <img src={item.image || "/community/gathering.jpg"} alt={item.title} loading="lazy" />
         <Badge>{item.category || "Community"}</Badge>
@@ -455,11 +469,12 @@ function EventCard({ item }: any) {
           <ArrowUpRight size={20} />
         </div>
       </div>
-    </a>
+    </AppLink>
   );
 }
 function Events() {
   const { data, session, search } = useSite();
+  const router = useRouter();
   const [filter, setFilter] = useState("All events");
   const items = data.entities.filter((i: Item) => i.kind === "events");
   const selected = items.find((i: Item) => i.id === search.get("event"));
@@ -498,7 +513,7 @@ function Events() {
       <Dialog
         open={!!selected}
         onOpenChange={(v) => {
-          if (!v) window.location.href = "/events";
+          if (!v) void router.navigate({ href: "/events", resetScroll: false });
         }}
       >
         <DialogContent className="slk-dialog">
@@ -637,10 +652,10 @@ function Vouchers() {
           <strong>A little extra for being part of the community.</strong>
           <span>Join, have your payment verified, then claim and use your vouchers.</span>
         </div>
-        <a href={session.user?.active ? "/member?tab=wallet" : "/membership"}>
+        <AppLink href={session.user?.active ? "/member?tab=wallet" : "/membership"}>
           {session.user?.active ? "Open my wallet" : "Unlock member benefits"}{" "}
           <ArrowRight size={17} />
-        </a>
+        </AppLink>
       </div>
       <div className="search-control">
         <Search size={19} />
@@ -794,22 +809,22 @@ function Businesses() {
           {selected?.publicContact || session.user?.active ? (
             <div className="contact-links">
               {selected?.phone && (
-                <a href={"tel:" + selected.phone}>
+                <AppLink href={"tel:" + selected.phone}>
                   <Phone />
                   {selected.phone}
-                </a>
+                </AppLink>
               )}
               {selected?.email && (
-                <a href={"mailto:" + selected.email}>
+                <AppLink href={"mailto:" + selected.email}>
                   <Mail />
                   {selected.email}
-                </a>
+                </AppLink>
               )}
               {selected?.website && (
-                <a href={selected.website} target="_blank" rel="noopener noreferrer">
+                <AppLink href={selected.website} target="_blank" rel="noopener noreferrer">
                   <ExternalLink />
                   Visit website
-                </a>
+                </AppLink>
               )}
             </div>
           ) : (
@@ -891,7 +906,7 @@ function Membership() {
               Voucher wallet & history
             </li>
           </ul>
-          <Button href={session.user ? "/member?tab=membership" : "/member"}>
+          <Button href={session.user ? "/member?tab=membership" : "/member?tab=membership&auth=signup"}>
             {session.user?.active ? "View my membership" : "Become a member"}{" "}
             <ArrowUpRight size={17} />
           </Button>
@@ -1022,7 +1037,7 @@ function RequestForm({ kind, onDone }: any) {
         />
         <span>
           I agree that my details may be used to respond to this request.{" "}
-          <a href="/privacy">Privacy notice</a>
+          <AppLink href="/privacy">Privacy notice</AppLink>
         </span>
       </label>
       {kind === "donation" && (
@@ -1103,11 +1118,11 @@ function Giving({ kind }: any) {
             {data.entities
               .filter((e: Item) => e.kind === "sponsors")
               .map((e: Item) => (
-                <a href={e.website || "/contact"} className="business-card" key={e.id}>
+                <AppLink href={e.website || "/contact"} className="business-card" key={e.id}>
                   {e.image && <img className="sponsor-logo" src={e.image} alt={e.title} />}
                   <h3>{e.title}</h3>
                   <p>{e.description}</p>
-                </a>
+                </AppLink>
               ))}
           </div>
         </div>
@@ -1131,15 +1146,15 @@ function Contact() {
             <br />
             with a hello.
           </h2>
-          <a href={"tel:" + data.settings.phone.replace(/\s/g, "")}>
+          <AppLink href={"tel:" + data.settings.phone.replace(/\s/g, "")}>
             <Phone />
             {data.settings.phone}
-          </a>
+          </AppLink>
           {data.settings.email && (
-            <a href={"mailto:" + data.settings.email}>
+            <AppLink href={"mailto:" + data.settings.email}>
               <Mail />
               {data.settings.email}
-            </a>
+            </AppLink>
           )}
           <p>
             <MapPin />
@@ -1156,51 +1171,84 @@ function Contact() {
   );
 }
 function SignIn() {
-  const { session } = useSite();
+  const { refresh, search, path } = useSite();
+  const [signup, setSignup] = useState(search.get("auth") === "signup");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   return (
     <div className="signin-panel">
       <div>
         <Eyebrow>YOUR COMMUNITY, IN YOUR POCKET</Eyebrow>
-        <h1>
-          Welcome to
-          <br />
-          your local circle.
-        </h1>
+        <h1>Welcome to<br />your local circle.</h1>
         <p>Keep your vouchers, events and business profile together in your member account.</p>
         <div className="signin-benefits">
-          <span>
-            <Ticket />
-            Your voucher wallet
-          </span>
-          <span>
-            <Building2 />
-            Your business profile
-          </span>
-          <span>
-            <Users />
-            Your community
-          </span>
+          <span><Ticket />Your voucher wallet</span>
+          <span><Building2 />Your business profile</span>
+          <span><Users />Your community</span>
         </div>
       </div>
       <div className="form-card">
-        <div className="icon-square">
-          <Heart />
-        </div>
-        <h2>Good to have you here.</h2>
-        <p>Sign in securely to create or access your personal account.</p>
-        <Button href="/signin-with-chatgpt?return_to=%2Fmember" target="_top">
-          Sign in with ChatGPT <ArrowUpRight size={18} />
-        </Button>
-        <small>
-          This demo uses your ChatGPT account for secure sign-in. Paid membership is verified
-          separately.
-        </small>
-        <a className="text-link" href="/membership">
-          Explore member benefits <ArrowRight size={16} />
-        </a>
+        <div className="icon-square"><Heart /></div>
+        <h2>{signup ? "Become part of the community." : "Good to have you here."}</h2>
+        <p>{signup ? "Create your account, then complete your membership application." : "Sign in with your email and password."}</p>
+        <form className="form-grid" onSubmit={async (event) => {
+          event.preventDefault();
+          if (busy) return;
+          const values = Object.fromEntries(new FormData(event.currentTarget));
+          setBusy(true); setError("");
+          try {
+            await api(signup ? "/auth/signup" : "/auth/login", {...values, consent: values.consent === "on"});
+            await refresh();
+          } catch (e: any) { setError(e.message); }
+          finally { setBusy(false); }
+        }}>
+          {signup && <Field label="Full name" name="name" autoComplete="name" required minLength={2} maxLength={120} />}
+          <Field label="Email address" name="email" type="email" autoComplete="username" required maxLength={254} />
+          <Field label="Password" name="password" type="password" autoComplete={signup ? "new-password" : "current-password"} required minLength={signup ? 12 : undefined} maxLength={256} />
+          {signup && <><small>Choose a password with at least 12 characters.</small><label className="auth-consent"><input type="checkbox" name="consent" required /><span>I agree to the <AppLink href="/privacy" target="_blank" rel="noreferrer">privacy notice</AppLink>.</span></label></>}
+          {error && <p className="auth-error" role="alert">{error}</p>}
+          <Button type="submit" disabled={busy}>{busy ? "Please wait…" : signup ? "Create my member account" : "Sign in"}<ArrowRight size={18}/></Button>
+        </form>
+        <button type="button" className="text-link auth-switch" disabled={busy} onClick={() => {setSignup(!signup);setError("");}}>{signup ? "Already have an account? Sign in" : "New here? Create your account"}</button>
+        <small>Voucher benefits become available after your membership payment is verified.</small>
+        {!signup && <details className="legacy-signin"><summary>Already have an account from the earlier demo?</summary><p>Use your previous sign-in once, then set a password under My details to keep your existing membership and history.</p><form action="/api/auth/legacy" method="post" target="_top"><input type="hidden" name="returnTo" value={path.startsWith("/admin") ? "/admin" : "/member?tab=profile"}/><button className="text-link" type="submit">Use previous sign-in</button></form></details>}
+        <AppLink className="text-link" href="/contact">Need help signing in?</AppLink>
       </div>
     </div>
   );
+}
+function PasswordForm() {
+  const { session, refresh } = useSite();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  return <section className="password-section"><h3>{session.user.hasPassword ? "Change your password" : "Set up email sign-in"}</h3>
+    <p>Use {session.user.email} and your password to sign in to your account.</p>
+    <form className="form-grid" onSubmit={async (event) => {
+      event.preventDefault(); if (busy) return;
+      const form = event.currentTarget;
+      const values = Object.fromEntries(new FormData(form));
+      if (values.password !== values.confirmPassword) {setError("Your passwords do not match.");return;}
+      setBusy(true);setError("");
+      try {await api("/auth/password", values);form.reset();await refresh();toast.success("Your password has been saved.");}
+      catch (e: any) {setError(e.message);} finally {setBusy(false);}
+    }}>
+      {session.user.hasPassword && <Field label="Current password" type="password" name="currentPassword" autoComplete="current-password" required maxLength={256}/>}
+      <Field label="New password (at least 12 characters)" type="password" name="password" autoComplete="new-password" minLength={12} maxLength={256} required/>
+      <Field label="Confirm new password" type="password" name="confirmPassword" autoComplete="new-password" minLength={12} maxLength={256} required/>
+      {error && <p role="alert" className="auth-error">{error}</p>}
+      <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save password"}</Button>
+    </form>
+  </section>;
+}
+function SignOut() {
+  const {refresh} = useSite();
+  const router = useRouter();
+  const [busy,setBusy] = useState(false);
+  return <button className="text-link" disabled={busy} onClick={async () => {
+    setBusy(true);
+    try {await api("/auth/logout", {}); await refresh(); await router.navigate({href:"/"});}
+    catch(e: any) {toast.error(e.message);} finally {setBusy(false);}
+  }}>Sign out <LogOut size={16}/></button>;
 }
 function Upload({ value, onChange }: any) {
   const [busy, setBusy] = useState(false);
@@ -1239,7 +1287,7 @@ function Upload({ value, onChange }: any) {
   );
 }
 function Member() {
-  const { session, refresh, search, data } = useSite();
+  const { session, refresh, search, data, sessionLoaded } = useSite();
   const [member, setMember] = useState<any>(null);
   const [error, setError] = useState("");
   const tab = search.get("tab") || "overview";
@@ -1248,10 +1296,12 @@ function Member() {
       .then(setMember)
       .catch((e: any) => setError(e.message));
   useEffect(() => {
+    setMember(null);
     if (session.user) load();
   }, [session.user?.id]);
+  if (!sessionLoaded) return <SessionLoading />;
   if (!session.user) return <SignIn />;
-  if (!member)
+  if (!member || member.user.id !== session.user.id)
     return (
       <div className="page-wrap">
         <Empty
@@ -1297,9 +1347,9 @@ function Member() {
           ["membership", "Membership"],
           ["profile", "My details"],
         ].map(([id, label]) => (
-          <a key={id} className={tab === id ? "selected" : ""} href={"/member?tab=" + id}>
+          <AppLink key={id} className={tab === id ? "selected" : ""} href={"/member?tab=" + id}>
             {label}
-          </a>
+          </AppLink>
         ))}
       </nav>
       {tab === "overview" && (
@@ -1348,9 +1398,7 @@ function Member() {
                 Open admin portal <ShieldCheck size={17} />
               </Button>
             )}
-            <a href="/signout-with-chatgpt?return_to=%2F" target="_top" className="text-link">
-              Sign out <LogOut size={16} />
-            </a>
+            <SignOut />
           </div>
         </>
       )}
@@ -1485,11 +1533,12 @@ function Member() {
             <Field label="Full name" name="name" defaultValue={user.name} required />
             <Field label="Phone number" name="phone" defaultValue={user.phone} />
             <Field label="Sign-in email" value={user.email} readOnly />
-            <p className="form-note">Your email comes from your secure sign-in account.</p>
+
             <Button type="submit">
               Save details <Check size={16} />
             </Button>
           </form>
+          <PasswordForm />
         </div>
       )}
     </div>
@@ -1591,7 +1640,7 @@ function Stat({ title, value, icon: Icon }: any) {
   );
 }
 function Admin() {
-  const { session, refresh, search, path } = useSite();
+  const { session, refresh, search, path, sessionLoaded } = useSite();
   const [admin, setAdmin] = useState<any>(null);
   const [error, setError] = useState("");
   const [editor, setEditor] = useState<Item | null>(null);
@@ -1607,8 +1656,10 @@ function Admin() {
       .then(setAdmin)
       .catch((e: any) => setError(e.message));
   useEffect(() => {
+    setAdmin(null);
     if (session.user?.role === "admin") load();
-  }, [session.user?.role]);
+  }, [session.user?.id, session.user?.role]);
+  if (!sessionLoaded) return <><Header /><SessionLoading /></>;
   if (!session.user)
     return (
       <>
@@ -1660,9 +1711,9 @@ function Admin() {
                 </Button>
               </form>
             )}
-            <a href="/member" className="text-link">
+            <AppLink href="/member" className="text-link">
               Back to my account
-            </a>
+            </AppLink>
           </div>
         </div>
         <Footer />
@@ -1714,22 +1765,22 @@ function Admin() {
         <span className="sidebar-label">COMMUNITY MANAGEMENT</span>
         <nav aria-label="Admin navigation">
           {adminNav.map(([id, label, Icon]) => (
-            <a key={id} href={"/admin?tab=" + id} className={tab === id ? "selected" : ""}>
+            <AppLink key={id} href={"/admin?tab=" + id} className={tab === id ? "selected" : ""}>
               <Icon size={18} />
               {label}
               {id === "requests" && pending.length > 0 && <b>{pending.length}</b>}
-            </a>
+            </AppLink>
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <a href="/">
+          <AppLink href="/">
             <ArrowUpRight size={17} />
             View website
-          </a>
-          <a href="/member">
+          </AppLink>
+          <AppLink href="/member">
             <Users size={17} />
             My member account
-          </a>
+          </AppLink>
           <div className="admin-user">
             <span>{session.user.name[0]}</span>
             <div>
@@ -1745,9 +1796,9 @@ function Admin() {
             So Love Krugersdorp <ChevronRight size={14} /> {title}
           </span>
           <Badge>NEW DEMO</Badge>
-          <a href="/" className="text-link">
+          <AppLink href="/" className="text-link">
             View website <ArrowUpRight size={16} />
-          </a>
+          </AppLink>
         </div>
         <main id="main-content" className="admin-content">
           <div className="admin-heading">
@@ -1818,15 +1869,15 @@ function Admin() {
                     <section className="admin-panel">
                       <div className="panel-heading">
                         <h2>Needs a little attention</h2>
-                        <a href="/admin?tab=requests">
+                        <AppLink href="/admin?tab=requests">
                           View all <ArrowRight size={15} />
-                        </a>
+                        </AppLink>
                       </div>
                       {pending.length ? (
                         pending.slice(0, 5).map((s: Item) => {
                           const d = JSON.parse(s.data);
                           return (
-                            <a className="request-row" href="/admin?tab=requests" key={s.id}>
+                            <AppLink className="request-row" href="/admin?tab=requests" key={s.id}>
                               <div className="request-icon">
                                 <HandHeart size={20} />
                               </div>
@@ -1840,7 +1891,7 @@ function Admin() {
                               </div>
                               <Badge tone="amber">New</Badge>
                               <ChevronRight size={17} />
-                            </a>
+                            </AppLink>
                           );
                         })
                       ) : (
@@ -1895,9 +1946,9 @@ function Admin() {
                   <section className="admin-panel">
                     <div className="panel-heading">
                       <h2>Latest community activity</h2>
-                      <a href="/admin?tab=activity">
+                      <AppLink href="/admin?tab=activity">
                         View activity <ArrowRight size={15} />
-                      </a>
+                      </AppLink>
                     </div>
                     {admin.audit.length ? (
                       admin.audit.slice(0, 4).map((a: Item) => (
@@ -2632,6 +2683,7 @@ export default function Platform() {
     adminConfigured: true,
   });
   const [error, setError] = useState("");
+  const [sessionLoaded, setSessionLoaded] = useState(false);
   const refresh = async () => {
     try {
       let s = await api("/session");
@@ -2640,6 +2692,7 @@ export default function Platform() {
         s = await api("/session");
       }
       setSession(s);
+      setSessionLoaded(true);
       const d = await api("/public");
       setData(d);
       setError("");
@@ -2672,11 +2725,11 @@ export default function Platform() {
     page = <Member />;
   else if (admin) page = <Admin />;
   return (
-    <Context.Provider value={{ data, session, refresh, path, search }}>
+    <Context.Provider value={{ data, session, refresh, path, search, sessionLoaded }}>
       <div className="slk-app">
-        <a href="#main-content" className="skip-link">
+        <AppLink href="#main-content" className="skip-link">
           Skip to content
-        </a>
+        </AppLink>
         {error && (
           <div className="error-banner" role="alert">
             {error}

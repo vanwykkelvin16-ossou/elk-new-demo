@@ -2710,3 +2710,15 @@ html {
     transition: none !important;
   }
 }
+
+/* Account forms and quiet initial session loading. */
+.auth-consent { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; line-height: 1.6; }
+.auth-consent input { width: 17px; height: 17px; margin-top: 3px; accent-color: #d8293c; flex-shrink: 0; }
+.auth-consent a { text-decoration: underline; }
+.auth-error { color: #a4192b; background: #fff0f1; padding: 12px; border-radius: 8px; font-size: 14px; }
+.auth-switch { margin: 20px 0 12px; text-align: left; }
+.legacy-signin { margin: 20px 0; font-size: 13px; color: #626773; }
+.legacy-signin summary { cursor: pointer; }
+.legacy-signin p { font-size: 13px; }
+.password-section { margin-top: 32px; padding-top: 24px; border-top: 1px solid #eceef0; }
+.account-loading { min-height: 280px; display: flex; align-items: center; justify-content: center; gap: 12px; color: #747985; }

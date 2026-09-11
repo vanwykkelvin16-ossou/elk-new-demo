@@ -1,10 +1,10 @@
 import {DatabaseSync} from 'node:sqlite';
-import {readFileSync} from 'node:fs';
+import {readFileSync,readdirSync} from 'node:fs';
 import {build} from 'esbuild';
 import assert from 'node:assert/strict';
 await build({entryPoints:['src/platform/api.ts'],bundle:true,platform:'node',format:'esm',outfile:'.sites-runtime/api-test.mjs'});
 const {handleAPI}=await import('../.sites-runtime/api-test.mjs');
-const sqlite=new DatabaseSync(':memory:');sqlite.exec(readFileSync('drizzle/0000_chilly_blade.sql','utf8'));
+const sqlite=new DatabaseSync(':memory:');for(const file of readdirSync('drizzle').filter(f=>f.endsWith('.sql')).sort())sqlite.exec(readFileSync('drizzle/'+file,'utf8'));
 class Statement{constructor(sql,values=[]){this.sql=sql;this.values=values}bind(...v){return new Statement(this.sql,v)}async first(){return sqlite.prepare(this.sql).get(...this.values)||null}async all(){return {results:sqlite.prepare(this.sql).all(...this.values)}}async run(){const r=sqlite.prepare(this.sql).run(...this.values);return {meta:{changes:Number(r.changes)}}}}
 const env={DB:{prepare:sql=>new Statement(sql),batch:async statements=>{sqlite.exec('BEGIN');try{const r=await Promise.all(statements.map(s=>s.run()));sqlite.exec('COMMIT');return r}catch(e){sqlite.exec('ROLLBACK');throw e}}},ADMIN_BOOTSTRAP_KEY:'test-only-bootstrap-secret'};
 async function call(path,body,user,expected=200,origin='https://slk.test'){
@@ -53,4 +53,51 @@ await call('/submissions',{kind:'contact',name:'Visitor',email:'visitor@example.
 await call('/submissions',{kind:'donation',name:'Donor',email:'donor@example.test',amount:500,consent:true});
 assert.ok(sqlite.prepare('SELECT count(*) n FROM audit').get().n>=8);
 console.log('PASS: 35 workflow and access checks — membership, claims, redemption, ownership, publication, enquiries, history and CSRF.');
+
+// Exercise public account access without any platform identity headers.
+async function account(path, body, jar='', expected=200, extraHeaders={}) {
+ const response=await handleAPI(new Request('https://slk.test/api'+path,{method:body===undefined?'GET':'POST',headers:{origin:'https://slk.test',cookie:jar,'content-type':'application/json',...extraHeaders},body:body===undefined?undefined:JSON.stringify(body)}),env);
+ const data=await response.json();assert.equal(response.status,expected,path+': '+JSON.stringify(data));
+ const sessionCookie=response.headers.getSetCookie().find(c=>c.startsWith('__Host-slk_session='));
+ return {data, cookie:sessionCookie?.split(';')[0], response};
+}
+const signup={name:'Public Member',email:'public@example.test',password:'Secure membership passphrase!',consent:true};
+await account('/auth/signup',{...signup,password:'short'},'',400);
+await account('/auth/signup',signup,'',403,{origin:'https://evil.test'});
+const joined=await account('/auth/signup',signup);
+assert.ok(joined.response.headers.getSetCookie().every(c=>c.includes('HttpOnly')&&c.includes('Secure')&&c.includes('SameSite=Lax')));
+assert.ok(joined.cookie);
+const publicSession=(await account('/session',undefined,joined.cookie)).data;
+assert.equal(publicSession.user.email,signup.email);assert.equal(publicSession.user.active,false);assert.equal(publicSession.user.role,'member');
+assert.equal((await account('/member',undefined,joined.cookie)).data.user.id,publicSession.user.id);
+await account('/admin',undefined,joined.cookie,403);
+await account('/claim',{id:'voucher-example'},joined.cookie,403);
+await account('/auth/signup',{...signup,email:'PUBLIC@example.test'},'',409);
+await account('/auth/signup',{...signup,email:'owner@example.test'},'',409);
+await account('/auth/login',{email:signup.email,password:'wrong'},'',401);
+const signedIn=await account('/auth/login',signup);
+assert.equal((await account('/session',undefined,signedIn.cookie)).data.user.id,publicSession.user.id);
+const stored=sqlite.prepare('SELECT * FROM credentials WHERE user_id=?').get(publicSession.user.id);
+assert.notEqual(stored.password_hash,signup.password);
+assert.equal(sqlite.prepare('SELECT count(*) n FROM sessions WHERE token_hash=?').get(joined.cookie.split('=')[1]).n,0);
+const changed=await account('/auth/password',{password:'A new secure passphrase!',currentPassword:signup.password},signedIn.cookie);
+await account('/member',undefined,joined.cookie,401);
+await account('/member',undefined,signedIn.cookie,401);
+await account('/auth/login',signup,'',401);
+const logout=await account('/auth/logout',{},changed.cookie);
+await account('/member',undefined,changed.cookie,401);
+assert.equal((await account('/session',undefined,'__Host-slk_signed_out=1',200,{'oai-authenticated-user-id':'owner'})).data.signedIn,false);
+assert.ok(logout.response.headers.getSetCookie().some(c=>c.startsWith('__Host-slk_signed_out=1')));
+const legacy=await account('/auth/password',{password:'Owner account passphrase!'},'',200,{'oai-authenticated-user-id':'owner'});
+assert.equal((await account('/session',undefined,legacy.cookie)).data.user.role,'admin');
+await account('/admin',undefined,legacy.cookie);
+const expired=await account('/auth/signup',{...signup,email:'expired@example.test'});
+const expiredId=(await account('/session',undefined,expired.cookie)).data.user.id;
+sqlite.prepare('UPDATE sessions SET expires_at=0 WHERE user_id=?').run(expiredId);
+await account('/member',undefined,expired.cookie,401);
+for(let i=0;i<10;i++)await account('/auth/login',{email:'rate@example.test',password:'wrong'},'',401);
+await account('/auth/login',{email:'rate@example.test',password:'wrong'},'',429);
+sqlite.prepare('UPDATE auth_attempts SET expires_at=0').run();
+await account('/auth/login',{email:'rate@example.test',password:'wrong'},'',401);
+console.log('PASS: public signup/login, private cookies, inactive membership, admin isolation, duplicate/legacy email protection, password rotation, revocation, expiry, sign-out and rate limits.');
 sqlite.close();
