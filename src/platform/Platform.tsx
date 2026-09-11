@@ -50,12 +50,6 @@ import {
   AlertDialogCancel,
   AlertDialogAction,
 } from "@/components/ui/alert-dialog";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@/components/ui/dropdown-menu";
 import { Toaster, toast } from "sonner";
 import { api, money, dateLabel } from "./client";
 import { defaultSettings, initialEntities } from "./seed";
@@ -262,6 +256,38 @@ function Header() {
   const { session, path, search } = useSite();
   const [open, setOpen] = useState(false);
   const [involvedOpen, setInvolvedOpen] = useState(false);
+  const headerRef = useRef<HTMLElement>(null);
+  const involvedRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const involvedButtonRef = useRef<HTMLButtonElement>(null);
+  const closeNavigation = () => {
+    setOpen(false);
+    setInvolvedOpen(false);
+  };
+  useEffect(() => {
+    if (!open && !involvedOpen) return;
+    const pointerDown = (event: PointerEvent) => {
+      if (!(event.target instanceof Node)) return;
+      if (!headerRef.current?.contains(event.target)) closeNavigation();
+      else if (!involvedRef.current?.contains(event.target)) setInvolvedOpen(false);
+    };
+    const keyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (involvedOpen) {
+        setInvolvedOpen(false);
+        involvedButtonRef.current?.focus();
+      } else {
+        setOpen(false);
+        menuButtonRef.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", pointerDown);
+    document.addEventListener("keydown", keyDown);
+    return () => {
+      document.removeEventListener("pointerdown", pointerDown);
+      document.removeEventListener("keydown", keyDown);
+    };
+  }, [open, involvedOpen]);
   useEffect(() => {
     setOpen(false);
     setInvolvedOpen(false);
@@ -274,30 +300,48 @@ function Header() {
           Make a difference <ArrowUpRight size={13} />
         </AppLink>
       </div>
-      <header className="header">
+      <header className="header" ref={headerRef}>
         <Logo />
         <nav
           id="main-navigation"
           className={open ? "nav open" : "nav"}
           aria-label="Main navigation"
         >
+          <AppLink href="/" className="mobile-only" onClick={closeNavigation}>
+            Home
+          </AppLink>
           {publicNav.map(([href, label]) => (
-            <AppLink key={href} href={href} className={path === href ? "active" : ""}>
+            <AppLink
+              key={href}
+              href={href}
+              className={path === href ? "active" : ""}
+              onClick={closeNavigation}
+              aria-current={path === href ? "page" : undefined}
+            >
               {label}
             </AppLink>
           ))}
-          <DropdownMenu open={involvedOpen} onOpenChange={setInvolvedOpen}>
-            <DropdownMenuTrigger asChild>
-              <button
-                className={
-                  "involved-trigger " +
-                  (["/membership", "/sponsor", "/donate"].includes(path) ? "active" : "")
-                }
-              >
-                Get involved <ChevronDown size={15} />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="involved-dropdown" align="start" sideOffset={12}>
+          <div
+            className="involved-menu"
+            ref={involvedRef}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setInvolvedOpen(false);
+            }}
+          >
+            <button
+              type="button"
+              ref={involvedButtonRef}
+              aria-expanded={involvedOpen}
+              aria-controls="involved-navigation"
+              onClick={() => setInvolvedOpen((value) => !value)}
+              className={
+                "involved-trigger " +
+                (["/membership", "/sponsor", "/donate"].includes(path) ? "active" : "")
+              }
+            >
+              Get involved <ChevronDown size={15} />
+            </button>
+            <div id="involved-navigation" className="involved-dropdown" hidden={!involvedOpen}>
               {[
                 [
                   "/membership",
@@ -308,23 +352,37 @@ function Header() {
                 ["/sponsor", "Become a sponsor", "Put your business behind local good", Building2],
                 ["/donate", "Give a donation", "Support the community you care about", HandHeart],
               ].map(([href, title, description, Icon]: any) => (
-                <DropdownMenuItem asChild key={href}>
-                  <AppLink href={href}>
-                    <span className="involved-icon">
-                      <Icon size={20} />
-                    </span>
-                    <span>
-                      <strong>{title}</strong>
-                      <small>{description}</small>
-                    </span>
-                    <ArrowUpRight size={16} />
-                  </AppLink>
-                </DropdownMenuItem>
+                <AppLink
+                  key={href}
+                  href={href}
+                  onClick={closeNavigation}
+                  aria-current={path === href ? "page" : undefined}
+                >
+                  <span className="involved-icon">
+                    <Icon size={20} />
+                  </span>
+                  <span>
+                    <strong>{title}</strong>
+                    <small>{description}</small>
+                  </span>
+                  <ArrowUpRight size={16} />
+                </AppLink>
               ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <AppLink className="mobile-only" href="/contact">
+            </div>
+          </div>
+          <AppLink className="mobile-only" href="/contact" onClick={closeNavigation}>
             Contact us
+          </AppLink>
+          <AppLink className="mobile-only" href="/member" onClick={closeNavigation}>
+            {session.user ? "My account" : "Member login"}
+          </AppLink>
+          {session.user?.role === "admin" && (
+            <AppLink className="mobile-only" href="/admin" onClick={closeNavigation}>
+              Admin portal
+            </AppLink>
+          )}
+          <AppLink className="mobile-only nav-privacy" href="/privacy" onClick={closeNavigation}>
+            Privacy
           </AppLink>
         </nav>
         <div className="header-actions">
@@ -336,10 +394,15 @@ function Header() {
           </Button>
           <button
             className="menu-toggle"
+            ref={menuButtonRef}
+            type="button"
             aria-label={open ? "Close menu" : "Open menu"}
             aria-expanded={open}
             aria-controls="main-navigation"
-            onClick={() => setOpen(!open)}
+            onClick={() => {
+              setOpen(!open);
+              setInvolvedOpen(false);
+            }}
           >
             {open ? <X /> : <Menu />}
           </button>
@@ -410,7 +473,7 @@ function Home() {
           title={
             data.settings.headline === defaultSettings.headline ? (
               <>
-                A little love.
+                <span className="home-title-accent">A little love.</span>
                 <br />A stronger Krugersdorp.
               </>
             ) : (
@@ -494,18 +557,30 @@ function Home() {
           ))}
         </div>
       </section>
-      <section className="story-band">
-        <div className="story-image">
-          <img src="/stock/home-story.webp" alt="Volunteers chatting beside a van" loading="lazy" />
+      <section className="story-band local-roots" aria-labelledby="local-roots-title">
+        <div className="roots-visual">
+          <div className="story-image">
+            <img
+              src="/stock/home-story.webp"
+              alt="Volunteers chatting beside a van"
+              loading="lazy"
+              width={1000}
+              height={667}
+            />
+          </div>
+          <div className="roots-photo-note">
+            <Heart size={25} aria-hidden="true" />
+            <span>
+              Small acts.<strong>Lasting connection.</strong>
+            </span>
+          </div>
         </div>
-        <div>
+        <div className="roots-copy">
           <Eyebrow>LOCAL ROOTS. SHARED HOPE.</Eyebrow>
-          <h2>
+          <h2 id="local-roots-title">
             We believe in
             <br />
-            the good in
-            <br />
-            <em>our town.</em>
+            <em>the good in our town.</em>
           </h2>
           <p>
             Born from the vision of Speak Jesus, So Love Krugersdorp brings faith and practical care
@@ -515,9 +590,22 @@ function Home() {
             We connect residents, businesses and ministries around a shared purpose: helping
             Krugersdorp flourish.
           </p>
-          <Button href="/about" className="outline">
-            This is our story <ArrowUpRight size={18} />
-          </Button>
+          <div className="roots-values">
+            <span>
+              <Users size={17} aria-hidden="true" /> People first
+            </span>
+            <span>
+              <HandHeart size={17} aria-hidden="true" /> Love in action
+            </span>
+          </div>
+          <div className="roots-actions">
+            <Button href="/about">
+              This is our story <ArrowUpRight size={18} />
+            </Button>
+            <AppLink href="/membership" className="text-link">
+              Be part of it <ArrowRight size={17} />
+            </AppLink>
+          </div>
         </div>
       </section>
       <section className="section">
@@ -1816,7 +1904,12 @@ function Member() {
   const { session, refresh, search, data, sessionLoaded } = useSite();
   const [member, setMember] = useState<any>(null);
   const [error, setError] = useState("");
-  const tab = search.get("tab") || "overview";
+  const requestedTab = search.get("tab") || "overview";
+  const tab = ["overview", "wallet", "events", "business", "membership", "profile"].includes(
+    requestedTab,
+  )
+    ? requestedTab
+    : "overview";
   const load = () =>
     api("/member")
       .then(setMember)
@@ -1865,16 +1958,24 @@ function Member() {
         </Badge>
       </PageTitle>
       <nav className="portal-tabs" aria-label="Member pages">
-        {[
-          ["overview", "Overview"],
-          ["wallet", "My vouchers"],
-          ["events", "My events"],
-          ["business", "Business profile"],
-          ["membership", "Membership"],
-          ["profile", "My details"],
-        ].map(([id, label]) => (
-          <AppLink key={id} className={tab === id ? "selected" : ""} href={"/member?tab=" + id}>
-            {label}
+        {(
+          [
+            ["overview", "Overview", LayoutDashboard],
+            ["wallet", "My vouchers", Ticket],
+            ["events", "My events", CalendarDays],
+            ["business", "Business profile", Building2],
+            ["membership", "Membership", Heart],
+            ["profile", "My details", Users],
+          ] as const
+        ).map(([id, label, Icon]) => (
+          <AppLink
+            key={id}
+            className={tab === id ? "selected" : ""}
+            href={"/member?tab=" + id}
+            aria-current={tab === id ? "page" : undefined}
+          >
+            <Icon size={17} aria-hidden="true" />
+            <span>{label}</span>
           </AppLink>
         ))}
       </nav>
