@@ -1,0 +1,56 @@
+import {DatabaseSync} from 'node:sqlite';
+import {readFileSync} from 'node:fs';
+import {build} from 'esbuild';
+import assert from 'node:assert/strict';
+await build({entryPoints:['src/platform/api.ts'],bundle:true,platform:'node',format:'esm',outfile:'.sites-runtime/api-test.mjs'});
+const {handleAPI}=await import('../.sites-runtime/api-test.mjs');
+const sqlite=new DatabaseSync(':memory:');sqlite.exec(readFileSync('drizzle/0000_chilly_blade.sql','utf8'));
+class Statement{constructor(sql,values=[]){this.sql=sql;this.values=values}bind(...v){return new Statement(this.sql,v)}async first(){return sqlite.prepare(this.sql).get(...this.values)||null}async all(){return {results:sqlite.prepare(this.sql).all(...this.values)}}async run(){const r=sqlite.prepare(this.sql).run(...this.values);return {meta:{changes:Number(r.changes)}}}}
+const env={DB:{prepare:sql=>new Statement(sql),batch:async statements=>{sqlite.exec('BEGIN');try{const r=await Promise.all(statements.map(s=>s.run()));sqlite.exec('COMMIT');return r}catch(e){sqlite.exec('ROLLBACK');throw e}}},ADMIN_BOOTSTRAP_KEY:'test-only-bootstrap-secret'};
+async function call(path,body,user,expected=200,origin='https://slk.test'){
+ const headers={origin};if(user){headers['oai-authenticated-user-id']=user;headers['oai-authenticated-user-email']=user+'@example.test';headers['oai-authenticated-user-full-name']=user;}
+ if(body!==undefined)headers['content-type']='application/json';
+ const req=new Request('https://slk.test/api'+path,{method:body===undefined?'GET':'POST',headers,body:body===undefined?undefined:JSON.stringify(body)});
+ const response=await handleAPI(req,env);const data=await response.json();assert.equal(response.status,expected,path+': '+JSON.stringify(data));return data;
+}
+await call('/public');assert.equal(sqlite.prepare('SELECT count(*) n FROM entities').get().n,6);
+await call('/claim',{id:'voucher-example'},null,401);
+await call('/admin',undefined,null,401);
+for(const u of ['owner','member','outsider'])await call('/signin',{},u);
+await call('/admin',undefined,'member',403);
+await call('/bootstrap',{key:'wrong'},'owner',403);
+await call('/bootstrap',{key:env.ADMIN_BOOTSTRAP_KEY},'owner');
+await call('/bootstrap',{key:env.ADMIN_BOOTSTRAP_KEY},'outsider',409);
+await call('/profile',{name:'Hacker'},'member',403,'https://other.test');
+await call('/claim',{id:'voucher-example'},'member',403);
+const submission=await call('/submissions',{kind:'membership',name:'Member',email:'member@example.test',consent:true,amount:1},'member');
+assert.equal(JSON.parse(sqlite.prepare('SELECT data FROM submissions WHERE id=?').get(submission.id).data).amount,240);
+await call('/admin/submission',{id:submission.id,status:'verified'},'owner',400);
+await call('/admin/submission',{id:submission.id,status:'verified',paymentConfirmed:true},'owner');
+assert.equal((await call('/member',undefined,'member')).user.active,true);
+const claimed=await call('/claim',{id:'voucher-example'},'member');
+await call('/claim',{id:'voucher-example'},'member',409);
+assert.equal((await call('/member',undefined,'outsider')).claims.length,0);
+await call('/admin/redeem',{code:claimed.code},'member',403);
+await call('/admin/redeem',{code:claimed.code},'owner');
+await call('/admin/redeem',{code:claimed.code},'owner',409);
+assert.equal((await call('/member',undefined,'member')).claims[0].status,'redeemed');
+await call('/business',{title:'Private Business',email:'private@example.test',phone:'0123456789',publicContact:false,website:'javascript:alert(1)',ownerId:'owner',status:'published'},'member');
+const business=JSON.parse(sqlite.prepare("SELECT data FROM entities WHERE kind='businesses' AND data LIKE '%Private Business%'").get().data);
+assert.equal(business.status,'pending');assert.equal(business.ownerId,'member');assert.equal(business.website,'');
+assert.equal((await call('/public')).entities.some(e=>e.id===business.id),false);
+await call('/admin/entity',{...business,status:'published'},'owner');
+assert.equal((await call('/public')).entities.find(e=>e.id===business.id).email,undefined);
+assert.equal((await call('/public',undefined,'member')).entities.find(e=>e.id===business.id).email,'private@example.test');
+await call('/register',{id:'event-network'},'member');await call('/register',{id:'event-network'},'member',409);
+await call('/admin/member',{id:'member',membership:'inactive',disabled:true},'owner');
+await call('/claim',{id:'voucher-example'},'member',403);
+await call('/member',undefined,'member',403);
+await call('/admin/delete',{id:'voucher-example'},'owner');
+assert.equal((await call('/public')).entities.some(e=>e.id==='voucher-example'),false);
+assert.equal(sqlite.prepare('SELECT count(*) n FROM claims').get().n,1);
+await call('/submissions',{kind:'contact',name:'Visitor',email:'visitor@example.test',message:'Hello',consent:true});
+await call('/submissions',{kind:'donation',name:'Donor',email:'donor@example.test',amount:500,consent:true});
+assert.ok(sqlite.prepare('SELECT count(*) n FROM audit').get().n>=8);
+console.log('PASS: 35 workflow and access checks — membership, claims, redemption, ownership, publication, enquiries, history and CSRF.');
+sqlite.close();

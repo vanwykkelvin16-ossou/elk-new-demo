@@ -1,0 +1,19 @@
+{
+  "name": "So Love Krugersdorp",
+  "short_name": "So Love",
+  "description": "Your So Love Krugersdorp community, events and member vouchers.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#d8293c",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
