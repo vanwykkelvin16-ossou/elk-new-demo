@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, createContext, useContext } from "react";
+import { useEffect, useState, useRef, createContext, useContext, type ReactNode } from "react";
 import { useLocation, useRouter } from "@tanstack/react-router";
 import {
   ArrowUpRight,
@@ -60,6 +60,7 @@ import { Toaster, toast } from "sonner";
 import { api, money, dateLabel } from "./client";
 import { defaultSettings, initialEntities } from "./seed";
 import "./platform.css";
+import "./editorial.css";
 type Item = Record<string, any>;
 const Context = createContext<any>(null);
 const useSite = () => useContext(Context);
@@ -154,7 +155,73 @@ function Eyebrow({ children }: any) {
     </div>
   );
 }
+const heroPhotos: Record<string, string> = {
+  "/about": "about-hero",
+  "/events": "events-hero",
+  "/businesses": "businesses-hero",
+  "/vouchers": "vouchers-hero",
+  "/contact": "contact-hero",
+};
+function EditorialHero({
+  eyebrow,
+  title,
+  description,
+  photo,
+  children,
+  label = "SO LOVE KRUGERSDORP",
+  compact = false,
+}: {
+  eyebrow: string;
+  title: ReactNode;
+  description?: string;
+  photo: string;
+  children?: ReactNode;
+  label?: string;
+  compact?: boolean;
+}) {
+  return (
+    <section className={"editorial-hero " + (compact ? "compact" : "")}>
+      <img
+        className="editorial-hero-image"
+        src={"/stock/" + photo + ".webp"}
+        srcSet={`/stock/${photo}-mobile.webp 900w, /stock/${photo}.webp 2000w`}
+        sizes="(max-width: 700px) 100vw, 94vw"
+        alt=""
+        fetchPriority="high"
+        decoding="async"
+      />
+      <div className="editorial-hero-shade" />
+      <div className="editorial-hero-content">
+        <Eyebrow>{eyebrow}</Eyebrow>
+        <h1>{title}</h1>
+        {description && <p>{description}</p>}
+        {children && <div className="editorial-hero-actions">{children}</div>}
+      </div>
+      <div className="editorial-hero-foot">
+        <span>
+          <MapPin size={15} />
+          {label}
+        </span>
+        <span>People. Purpose. Possibility.</span>
+      </div>
+    </section>
+  );
+}
 function PageTitle({ eyebrow, title, description, children }: any) {
+  const { path } = useSite();
+  const photo = heroPhotos[path];
+  if (photo)
+    return (
+      <EditorialHero
+        compact
+        eyebrow={eyebrow}
+        title={title}
+        description={description}
+        photo={photo}
+      >
+        {children}
+      </EditorialHero>
+    );
   return (
     <div className="page-title">
       <div>
@@ -337,65 +404,31 @@ function Home() {
   const events = data.entities.filter((i: Item) => i.kind === "events").slice(0, 3);
   return (
     <>
-      <section className="hero">
-        <div className="hero-copy">
-          <Eyebrow>A COMMUNITY WITH HEART</Eyebrow>
-          <h1>
-            {data.settings.headline === defaultSettings.headline ? (
+      <div className="home-hero-wrap">
+        <EditorialHero
+          eyebrow="A COMMUNITY WITH HEART"
+          title={
+            data.settings.headline === defaultSettings.headline ? (
               <>
                 A little love.
-                <br />A stronger
-                <br />
-                <em>Krugersdorp.</em>
+                <br />A stronger Krugersdorp.
               </>
             ) : (
               data.settings.headline
-            )}
-          </h1>
-          <p>{data.settings.intro}</p>
-          <div className="button-row">
-            <Button href="/membership">
-              Find your place <ArrowUpRight size={18} />
-            </Button>
-            <AppLink className="text-link" href="/about">
-              Meet our community <ArrowRight size={17} />
-            </AppLink>
-          </div>
-          <div className="hero-note">
-            <div className="mini-hearts">
-              <Heart />
-              <Building2 />
-              <Users />
-            </div>
-            <span>
-              Local people. Shared purpose.
-              <br />
-              <strong>A town worth coming together for.</strong>
-            </span>
-          </div>
-        </div>
-        <div className="hero-photo">
-          <img
-            src="/community/gathering.jpg"
-            alt="The Krugersdorp community gathered for Speak Jesus"
-            fetchPriority="high"
-          />
-          <div className="photo-shade" />
-          <span className="photo-label">
-            <MapPin size={15} /> KRUGERSDORP, SOUTH AFRICA
-          </span>
-          <div className="photo-caption">
-            <span>
-              One town.
-              <br />
-              So much heart.
-            </span>
-            <div className="photo-heart">
-              <Heart size={36} strokeWidth={1.5} />
-            </div>
-          </div>
-        </div>
-      </section>
+            )
+          }
+          description={data.settings.intro}
+          photo="home-hero"
+          label="KRUGERSDORP, SOUTH AFRICA"
+        >
+          <Button href="/membership">
+            Find your place <ArrowUpRight size={18} />
+          </Button>
+          <AppLink className="hero-secondary" href="/about">
+            Meet our community <ArrowRight size={17} />
+          </AppLink>
+        </EditorialHero>
+      </div>
       <div className="values-strip">
         <span>GOOD THINGS START WITH US</span>
         <span>
@@ -463,11 +496,7 @@ function Home() {
       </section>
       <section className="story-band">
         <div className="story-image">
-          <img
-            src="/community/outreach.jpg"
-            alt="People connecting at a So Love Krugersdorp community gathering"
-            loading="lazy"
-          />
+          <img src="/stock/home-story.webp" alt="Volunteers chatting beside a van" loading="lazy" />
         </div>
         <div>
           <Eyebrow>LOCAL ROOTS. SHARED HOPE.</Eyebrow>
@@ -660,7 +689,17 @@ function About() {
           description="Love becomes powerful when we put it into practice."
         />
         <div className="about-grid">
-          <img src="/community/team.jpg" alt="Community members meeting at Curamus School" />
+          <div className="about-photo-pair">
+            <img
+              src="/stock/about-detail.webp"
+              alt="People collaborating around a shared idea"
+              loading="lazy"
+            />
+            <div className="about-photo-caption">
+              <span>Shared purpose.</span>
+              <strong>Stronger connections.</strong>
+            </div>
+          </div>
           <div>
             <h2>Hope takes all of us.</h2>
             <p>
@@ -1015,57 +1054,27 @@ function Membership() {
   return (
     <div className="membership-page involvement-page">
       <InvolvementNav current="/membership" />
-      <section className="join-hero">
-        <div className="join-copy">
-          <Eyebrow>SO LOVE KRUGERSDORP MEMBERSHIP</Eyebrow>
-          <h1>
-            You belong
+      <EditorialHero
+        eyebrow="SO LOVE KRUGERSDORP MEMBERSHIP"
+        title={
+          <>
+            You belong here.
             <br />
-            <span>here.</span>
-            <Heart className="join-heart" strokeWidth={1.5} />
-          </h1>
-          <p>
-            A familiar face. A new connection. A little more local love. Become part of a community
-            that cares about Krugersdorp — and the people who call it home.
-          </p>
-          <div className="join-actions">
-            <Button href={join}>
-              {session.user?.active ? "My membership" : "Yes, I'd love to join"}
-              <ArrowUpRight size={19} />
-            </Button>
-            <span>
-              {money(data.settings.membershipPrice)}
-              <small>per year, after payment verification</small>
-            </span>
-          </div>
-          <div className="join-reassurance">
-            <ShieldCheck size={17} />
-            <span>Your own account. Your local community.</span>
-          </div>
-        </div>
-        <div className="join-visual">
-          <img src="/community/gathering.jpg" alt="The Krugersdorp community coming together" />
-          <span className="join-photo-label">
-            <MapPin size={14} />
-            Made of local moments
-          </span>
-          <div className="membership-pass">
-            <div>
-              <img src="/brand-heart.png" alt="" />
-              <span>
-                so love<small>KRUGERSDORP</small>
-              </span>
-              <ArrowUpRight size={25} />
-            </div>
-            <strong>Your local circle.</strong>
-            <p>Connections. Community. A little extra love.</p>
-            <div className="pass-bottom">
-              <span>ANNUAL MEMBERSHIP</span>
-              <span>Membership preview</span>
-            </div>
-          </div>
-        </div>
-      </section>
+            Let's make it meaningful.
+          </>
+        }
+        description="A familiar face. A new connection. A little more local love. Be part of a community that cares about Krugersdorp and the people who call it home."
+        photo="membership-hero"
+      >
+        <Button href={join}>
+          {session.user?.active ? "My membership" : "Yes, I'd love to join"}
+          <ArrowUpRight size={18} />
+        </Button>
+        <span className="hero-price">
+          {money(data.settings.membershipPrice)}
+          <small>per year · after payment verification</small>
+        </span>
+      </EditorialHero>
       <section className="join-benefits" aria-labelledby="membership-benefits">
         <div className="join-section-heading">
           <Eyebrow>MORE REASONS TO BELONG</Eyebrow>
@@ -1331,47 +1340,41 @@ function Giving({ kind }: { kind: "sponsor" | "donation" }) {
   return (
     <div className={"involvement-page giving-page " + (sponsor ? "sponsor-page" : "donation-page")}>
       <InvolvementNav current={sponsor ? "/sponsor" : "/donate"} />
-      <div className="giving-intro">
-        <Eyebrow>
-          {sponsor ? "PARTNER WITH PURPOSE" : "A LITTLE GENEROSITY. CLOSE TO HOME."}
-        </Eyebrow>
-        <h1>
-          {sponsor ? (
+      <EditorialHero
+        compact
+        eyebrow={sponsor ? "PARTNER WITH PURPOSE" : "GIVE CLOSE TO HOME"}
+        title={
+          sponsor ? (
             <>
               Good business.
               <br />
-              <span>Even greater purpose.</span>
+              Even greater purpose.
             </>
           ) : (
             <>
               Give a little love.
               <br />
-              <span>Make it local.</span>
+              Make it local.
             </>
-          )}
-        </h1>
-        <p>
-          {sponsor
+          )
+        }
+        description={
+          sponsor
             ? "Bring your business, your skills and your heart. Together, we can create more moments that matter for Krugersdorp."
-            : data.settings.donationIntro}
-        </p>
-      </div>
+            : data.settings.donationIntro
+        }
+        photo={sponsor ? "sponsor-hero" : "donate-hero"}
+      >
+        <Button href="#giving-form-title">
+          {sponsor ? "Become a partner" : "Make a pledge"}
+          <ArrowUpRight size={18} />
+        </Button>
+        <AppLink className="hero-secondary" href="/contact">
+          Talk to the team <ArrowRight size={17} />
+        </AppLink>
+      </EditorialHero>
       <div className="giving-layout">
         <div className="giving-story">
-          <div className="giving-photo">
-            <img
-              src={sponsor ? "/community/team.jpg" : "/community/outreach.jpg"}
-              alt={
-                sponsor
-                  ? "Local community members coming together"
-                  : "A So Love Krugersdorp community gathering"
-              }
-            />
-            <span>
-              <Heart size={17} />
-              {sponsor ? "Better, together." : "Care starts close to home."}
-            </span>
-          </div>
           <div className="giving-story-copy">
             <h2>
               {sponsor
@@ -1505,7 +1508,15 @@ function Contact() {
             <MapPin />
             Krugersdorp, Gauteng, South Africa
           </p>
-          <img src="/community/outreach.jpg" alt="SLKD community gathering" />
+          <div className="contact-location">
+            <MapPin size={28} />
+            <strong>
+              Local roots.
+              <br />
+              An open door.
+            </strong>
+            <span>Krugersdorp · Gauteng</span>
+          </div>
         </div>
         <div className="form-card">
           <h3>Send the team a message</h3>
@@ -1522,7 +1533,8 @@ function SignIn() {
   const [error, setError] = useState("");
   return (
     <div className="signin-panel">
-      <div>
+      <div className="signin-story">
+        <img src="/stock/signin.webp" className="signin-story-photo" alt="" decoding="async" />
         <Eyebrow>YOUR COMMUNITY, IN YOUR POCKET</Eyebrow>
         <h1>
           Welcome to
@@ -3613,7 +3625,7 @@ export default function Platform() {
   else if (admin) page = <Admin />;
   return (
     <Context.Provider value={{ data, session, refresh, path, search, sessionLoaded }}>
-      <div className="slk-app">
+      <div className={"slk-app editorial-theme " + (admin ? "admin-view" : "public-view")}>
         <AppLink href="#main-content" className="skip-link">
           Skip to content
         </AppLink>
