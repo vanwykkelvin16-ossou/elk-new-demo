@@ -1,5 +1,15 @@
 import { defaultSettings, initialEntities } from "./seed";
-import { SESSION_COOKIE, SIGNED_OUT_COOKIE, SESSION_SECONDS, randomToken, digest, passwordHash, equalHash, cookie, readCookie } from "./auth";
+import {
+  SESSION_COOKIE,
+  SIGNED_OUT_COOKIE,
+  SESSION_SECONDS,
+  randomToken,
+  digest,
+  passwordHash,
+  equalHash,
+  cookie,
+  readCookie,
+} from "./auth";
 type Env = { DB: any; BUCKET: any; ADMIN_BOOTSTRAP_KEY?: string };
 const json = (data: unknown, status = 200) =>
   Response.json(data, {
@@ -67,9 +77,19 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
     // Seed examples are read-only until an admin explicitly imports them.
     const catalog = entities;
     const sessionToken = readCookie(request, SESSION_COOKIE);
-    const savedSession = sessionToken ? await one("SELECT user_id FROM sessions WHERE token_hash=? AND expires_at>?", await digest(sessionToken), Date.now()) : null;
+    const savedSession = sessionToken
+      ? await one(
+          "SELECT user_id FROM sessions WHERE token_hash=? AND expires_at>?",
+          await digest(sessionToken),
+          Date.now(),
+        )
+      : null;
     // An explicit app session/sign-out overrides any legacy platform identity.
-    const identity = savedSession?.user_id || (!sessionToken && !readCookie(request, SIGNED_OUT_COOKIE) ? request.headers.get("oai-authenticated-user-id") : null);
+    const identity =
+      savedSession?.user_id ||
+      (!sessionToken && !readCookie(request, SIGNED_OUT_COOKIE)
+        ? request.headers.get("oai-authenticated-user-id")
+        : null);
     let user = identity ? await one("SELECT * FROM users WHERE id=?", identity) : null;
     if (request.method !== "GET" && request.method !== "HEAD") {
       const origin = request.headers.get("origin");
@@ -87,15 +107,107 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
       mustUser();
       if (user.role !== "admin") fail("Administrator access is required.", 403);
     };
+    const claimView = (c: any, owner: any) => {
+      const voucher = catalog.find((e: any) => e.id === c.voucher_id && e.kind === "vouchers");
+      const reason =
+        c.status !== "available"
+          ? "This voucher has already been redeemed."
+          : !active(owner)
+            ? "An active membership is required to redeem."
+            : !voucher || voucher.status !== "published"
+              ? "This offer is no longer available."
+              : voucher.expires && voucher.expires < now().slice(0, 10)
+                ? "This voucher has expired."
+                : "";
+      return {
+        ...c,
+        receipt: c.receipt ? JSON.parse(c.receipt) : null,
+        voucher: voucher || null,
+        redeemable: !reason,
+        invalidReason: reason,
+      };
+    };
+    const redeemClaim = async (c: any, owner: any) => {
+      const view = claimView(c, owner);
+      if (!view.redeemable) fail(view.invalidReason, 409);
+      const timestamp = now();
+      const receipt = {
+        title: view.voucher.title,
+        business: view.voucher.business,
+        benefit: view.voucher.benefit,
+        memberName: owner.name,
+        code: c.code,
+        redeemedAt: timestamp,
+        demo: !!view.voucher.demo,
+      };
+      const result = await run(
+        "UPDATE claims SET status='redeemed',redeemed_at=?,receipt=? WHERE id=? AND user_id=? AND status='available' AND EXISTS(SELECT 1 FROM users WHERE id=? AND disabled=0 AND membership='active' AND (expires IS NULL OR expires>=?)) AND EXISTS(SELECT 1 FROM entities WHERE id=? AND json_extract(data,'$.status')='published' AND (coalesce(json_extract(data,'$.expires'),'')='' OR json_extract(data,'$.expires')>=?))",
+        timestamp,
+        JSON.stringify(receipt),
+        c.id,
+        owner.id,
+        owner.id,
+        timestamp.slice(0, 10),
+        c.voucher_id,
+        timestamp.slice(0, 10),
+      );
+      if (!result.meta.changes)
+        fail("This voucher has already been redeemed or is no longer valid.", 409);
+      await log(user.id, "voucher.redeemed", c.id);
+      return {
+        ok: true,
+        claim: claimView(
+          { ...c, status: "redeemed", redeemed_at: timestamp, receipt: JSON.stringify(receipt) },
+          owner,
+        ),
+        serverTime: now(),
+      };
+    };
+    if (path === "/wallet" && request.method === "GET") {
+      mustUser();
+      return json({
+        claims: (
+          await all("SELECT * FROM claims WHERE user_id=? ORDER BY created_at DESC", user.id)
+        ).map((c: any) => claimView(c, user)),
+        serverTime: now(),
+      });
+    }
+    if (path === "/redeem" && request.method === "POST") {
+      mustUser();
+      const b = (await request.json()) as any;
+      if (b.confirm !== true)
+        fail("Confirm that you are with staff before redeeming this voucher.");
+      const c = await one(
+        "SELECT * FROM claims WHERE id=? AND user_id=?",
+        clean(b.id, 100),
+        user.id,
+      );
+      if (!c) fail("Voucher not found in your wallet.", 404);
+      return json(await redeemClaim(c, user));
+    }
     if (path === "/session")
       return json({
-        user: user ? { ...user, active: active(user), hasPassword: !!(await one("SELECT user_id FROM credentials WHERE user_id=?", user.id)) } : null,
+        user: user
+          ? {
+              ...user,
+              active: active(user),
+              hasPassword: !!(await one(
+                "SELECT user_id FROM credentials WHERE user_id=?",
+                user.id,
+              )),
+            }
+          : null,
         signedIn: !!identity,
         adminConfigured: !!(await one("SELECT id FROM users WHERE role='admin' LIMIT 1")),
       });
     const issueSession = async (userId: string) => {
       const token = randomToken();
-      await run("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)", await digest(token), userId, Date.now() + SESSION_SECONDS * 1000);
+      await run(
+        "INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
+        await digest(token),
+        userId,
+        Date.now() + SESSION_SECONDS * 1000,
+      );
       const response = json({ ok: true });
       response.headers.append("Set-Cookie", cookie(SESSION_COOKIE, token));
       response.headers.append("Set-Cookie", cookie(SIGNED_OUT_COOKIE, "", 0));
@@ -104,27 +216,43 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
     if (path === "/auth/legacy" && request.method === "POST") {
       const form = await request.formData();
       const returnTo = form.get("returnTo") === "/admin" ? "/admin" : "/member?tab=profile";
-      if (sessionToken) await run("DELETE FROM sessions WHERE token_hash=?", await digest(sessionToken));
-      const response = new Response(null, { status: 303, headers: { Location: "/signin-with-chatgpt?return_to=" + encodeURIComponent(returnTo), "Cache-Control": "no-store" } });
+      if (sessionToken)
+        await run("DELETE FROM sessions WHERE token_hash=?", await digest(sessionToken));
+      const response = new Response(null, {
+        status: 303,
+        headers: {
+          Location: "/signin-with-chatgpt?return_to=" + encodeURIComponent(returnTo),
+          "Cache-Control": "no-store",
+        },
+      });
       response.headers.append("Set-Cookie", cookie(SESSION_COOKIE, "", 0));
       response.headers.append("Set-Cookie", cookie(SIGNED_OUT_COOKIE, "", 0));
       return response;
     }
     if (path === "/auth/logout" && request.method === "POST") {
-      if (sessionToken) await run("DELETE FROM sessions WHERE token_hash=?", await digest(sessionToken));
+      if (sessionToken)
+        await run("DELETE FROM sessions WHERE token_hash=?", await digest(sessionToken));
       const response = json({ ok: true });
       response.headers.append("Set-Cookie", cookie(SESSION_COOKIE, "", 0));
       response.headers.append("Set-Cookie", cookie(SIGNED_OUT_COOKIE, "1"));
       return response;
     }
-    if (["/auth/signup", "/auth/login", "/auth/password"].includes(path) && request.method === "POST") {
+    if (
+      ["/auth/signup", "/auth/login", "/auth/password"].includes(path) &&
+      request.method === "POST"
+    ) {
       if (path === "/auth/password") mustUser();
-      const b = await request.json() as any;
+      const b = (await request.json()) as any;
       const email = clean(path === "/auth/password" ? user.email : b.email, 254).toLowerCase();
       const password = typeof b.password === "string" ? b.password : "";
-      if (b.currentPassword && (typeof b.currentPassword !== "string" || b.currentPassword.length > 256)) fail("Your current password is incorrect.", 401);
+      if (
+        b.currentPassword &&
+        (typeof b.currentPassword !== "string" || b.currentPassword.length > 256)
+      )
+        fail("Your current password is incorrect.", 401);
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail("Enter a valid email address.");
-      if (password.length > 256 || !password.length) fail("Enter a password of up to 256 characters.");
+      if (password.length > 256 || !password.length)
+        fail("Enter a password of up to 256 characters.");
       const timestamp = Date.now();
       // Atomic fixed-window limits: email and, when provided by the edge, client IP.
       const subjects = ["email:" + email];
@@ -132,15 +260,28 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
       if (ip) subjects.push("ip:" + ip);
       for (const subject of subjects) {
         const key = await digest(subject);
-        const attempt = await one("INSERT INTO auth_attempts(key,count,expires_at) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET count=CASE WHEN expires_at<=? THEN 1 ELSE count+1 END, expires_at=CASE WHEN expires_at<=? THEN ? ELSE expires_at END RETURNING count", key, timestamp + 900000, timestamp, timestamp, timestamp + 900000);
-        if (attempt.count > (subject.startsWith("ip:") ? 60 : 10)) fail("Too many attempts. Please try again in 15 minutes.", 429);
+        const attempt = await one(
+          "INSERT INTO auth_attempts(key,count,expires_at) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET count=CASE WHEN expires_at<=? THEN 1 ELSE count+1 END, expires_at=CASE WHEN expires_at<=? THEN ? ELSE expires_at END RETURNING count",
+          key,
+          timestamp + 900000,
+          timestamp,
+          timestamp,
+          timestamp + 900000,
+        );
+        if (attempt.count > (subject.startsWith("ip:") ? 60 : 10))
+          fail("Too many attempts. Please try again in 15 minutes.", 429);
       }
       const existing = await one("SELECT * FROM credentials WHERE email=?", email);
       if (path === "/auth/login") {
-        const hash = await passwordHash(password, existing?.salt || "slkd-unknown-account-timing-salt");
-        if (!existing || !equalHash(hash, existing.password_hash)) fail("The email or password is incorrect.", 401);
+        const hash = await passwordHash(
+          password,
+          existing?.salt || "slkd-unknown-account-timing-salt",
+        );
+        if (!existing || !equalHash(hash, existing.password_hash))
+          fail("The email or password is incorrect.", 401);
         const account = await one("SELECT * FROM users WHERE id=?", existing.user_id);
-        if (!account || account.disabled) fail("Your account is paused. Please contact the team.", 403);
+        if (!account || account.disabled)
+          fail("Your account is paused. Please contact the team.", 403);
         return issueSession(account.id);
       }
       if (password.length < 12) fail("Use a password with at least 12 characters.");
@@ -148,26 +289,43 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
       const hash = await passwordHash(password, salt);
       if (path === "/auth/signup") {
         const name = clean(b.name, 120);
-        if (name.length < 2 || b.consent !== true) fail("Enter your full name and accept the privacy notice.");
+        if (name.length < 2 || b.consent !== true)
+          fail("Enter your full name and accept the privacy notice.");
         // Never attach an unverified signup to an existing member or administrator by email.
-        if (existing || await one("SELECT id FROM users WHERE lower(email)=? LIMIT 1", email)) fail("An account already uses this email. Sign in, or contact the team for help.", 409);
+        if (existing || (await one("SELECT id FROM users WHERE lower(email)=? LIMIT 1", email)))
+          fail("An account already uses this email. Sign in, or contact the team for help.", 409);
         const userId = uid();
         try {
           await db.batch([
-            db.prepare("INSERT INTO users(id,email,name,created_at) VALUES(?,?,?,?)").bind(userId, email, name, now()),
-            db.prepare("INSERT INTO credentials(user_id,email,salt,password_hash) VALUES(?,?,?,?)").bind(userId, email, salt, hash),
+            db
+              .prepare("INSERT INTO users(id,email,name,created_at) VALUES(?,?,?,?)")
+              .bind(userId, email, name, now()),
+            db
+              .prepare("INSERT INTO credentials(user_id,email,salt,password_hash) VALUES(?,?,?,?)")
+              .bind(userId, email, salt, hash),
           ]);
         } catch (e: any) {
-          if (/UNIQUE/.test(e.message)) fail("An account already uses this email. Please sign in.", 409);
+          if (/UNIQUE/.test(e.message))
+            fail("An account already uses this email. Please sign in.", 409);
           throw e;
         }
         return issueSession(userId);
       }
       const own = await one("SELECT * FROM credentials WHERE user_id=?", user.id);
-      if (own && (!b.currentPassword || !equalHash(await passwordHash(String(b.currentPassword), own.salt), own.password_hash))) fail("Your current password is incorrect.", 401);
-      if (existing && existing.user_id !== user.id) fail("This email is already in use. Please contact the team.", 409);
+      if (
+        own &&
+        (!b.currentPassword ||
+          !equalHash(await passwordHash(String(b.currentPassword), own.salt), own.password_hash))
+      )
+        fail("Your current password is incorrect.", 401);
+      if (existing && existing.user_id !== user.id)
+        fail("This email is already in use. Please contact the team.", 409);
       await db.batch([
-        db.prepare("INSERT INTO credentials(user_id,email,salt,password_hash) VALUES(?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET salt=excluded.salt,password_hash=excluded.password_hash").bind(user.id, email, salt, hash),
+        db
+          .prepare(
+            "INSERT INTO credentials(user_id,email,salt,password_hash) VALUES(?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET salt=excluded.salt,password_hash=excluded.password_hash",
+          )
+          .bind(user.id, email, salt, hash),
         db.prepare("DELETE FROM sessions WHERE user_id=?").bind(user.id),
       ]);
       await log(user.id, "account.password", user.id);
@@ -228,7 +386,9 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
       mustUser();
       return json({
         user: { ...user, active: active(user) },
-        claims: await all("SELECT * FROM claims WHERE user_id=? ORDER BY created_at DESC", user.id),
+        claims: (
+          await all("SELECT * FROM claims WHERE user_id=? ORDER BY created_at DESC", user.id)
+        ).map((c: any) => claimView(c, user)),
         registrations: await all("SELECT * FROM registrations WHERE user_id=?", user.id),
         businesses: catalog.filter((e: any) => e.kind === "businesses" && e.ownerId === user.id),
         submissions: await all(
@@ -309,7 +469,7 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
       if (!result.meta.changes)
         fail("You have already claimed this voucher, or all vouchers have been claimed.", 409);
       await log(user.id, "voucher.claimed", v.id);
-      return json({ ok: true, code });
+      return json({ ok: true, id, code });
     }
     if (path === "/register" && request.method === "POST") {
       mustUser();
@@ -393,7 +553,7 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
       if (!env.BUCKET) fail("Image uploads are temporarily unavailable.", 503);
       const form = await request.formData();
       const file = form.get("file");
-      if (!(file instanceof File)) return json({error:"Please choose an image."},400);
+      if (!(file instanceof File)) return json({ error: "Please choose an image." }, 400);
       if (file.size > 5000000) fail("Please choose an image smaller than 5 MB.");
       const bytes = new Uint8Array(await file.arrayBuffer());
       let type = "";
@@ -540,19 +700,8 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
       if (path === "/admin/redeem") {
         const c = await one("SELECT * FROM claims WHERE code=?", clean(b.code, 30).toUpperCase());
         if (!c) fail("Voucher code not found.", 404);
-        const v = catalog.find((e: any) => e.id === c.voucher_id);
         const member = await one("SELECT * FROM users WHERE id=?", c.user_id);
-        if (!active(member)) fail("This member does not have an active membership.");
-        if (!v || v.status !== "published" || (v.expires && v.expires < now().slice(0, 10)))
-          fail("This offer is no longer valid.");
-        const r = await run(
-          "UPDATE claims SET status='redeemed',redeemed_at=? WHERE id=? AND status='available'",
-          now(),
-          c.id,
-        );
-        if (!r.meta.changes) fail("This voucher has already been redeemed.", 409);
-        await log(user.id, "voucher.redeemed", c.id);
-        return json({ ok: true });
+        return json(await redeemClaim(c, member));
       }
       if (path === "/admin/settings") {
         const next = {

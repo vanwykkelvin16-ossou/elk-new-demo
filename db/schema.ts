@@ -1,15 +1,23 @@
 import { sqliteTable, text, integer, uniqueIndex, index } from "drizzle-orm/sqlite-core";
-export const credentials = sqliteTable("credentials", {
-  userId: text("user_id").primaryKey(),
-  email: text("email").notNull(),
-  salt: text("salt").notNull(),
-  passwordHash: text("password_hash").notNull(),
-}, (t) => [uniqueIndex("credentials_email").on(t.email)]);
-export const sessions = sqliteTable("sessions", {
-  tokenHash: text("token_hash").primaryKey(),
-  userId: text("user_id").notNull(),
-  expiresAt: integer("expires_at").notNull(),
-}, (t) => [index("sessions_user").on(t.userId)]);
+export const credentials = sqliteTable(
+  "credentials",
+  {
+    userId: text("user_id").primaryKey(),
+    email: text("email").notNull(),
+    salt: text("salt").notNull(),
+    passwordHash: text("password_hash").notNull(),
+  },
+  (t) => [uniqueIndex("credentials_email").on(t.email)],
+);
+export const sessions = sqliteTable(
+  "sessions",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    userId: text("user_id").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+  },
+  (t) => [index("sessions_user").on(t.userId)],
+);
 export const authAttempts = sqliteTable("auth_attempts", {
   key: text("key").primaryKey(),
   count: integer("count").notNull(),
@@ -42,6 +50,7 @@ export const claims = sqliteTable(
     status: text("status").notNull().default("available"),
     createdAt: text("created_at").notNull(),
     redeemedAt: text("redeemed_at"),
+    receipt: text("receipt"),
   },
   (t) => [
     uniqueIndex("claim_once").on(t.userId, t.voucherId),

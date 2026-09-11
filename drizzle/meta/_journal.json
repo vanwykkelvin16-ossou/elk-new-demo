@@ -15,6 +15,13 @@
       "when": 1789152794924,
       "tag": "0001_tough_mantis",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789153668003,
+      "tag": "0002_thankful_adam_warlock",
+      "breakpoints": true
     }
   ]
 }

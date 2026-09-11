@@ -20,6 +20,17 @@ try{
  const cookie=join.headers.getSetCookie().find(c=>c.startsWith('__Host-slk_session=')).split(';')[0];
  const account=await mf.dispatchFetch('https://slk.test/api/member',{headers:{cookie}});assert.equal(account.status,200);assert.equal((await account.json()).user.email,'cloudflare@example.test');
  const login=await mf.dispatchFetch('https://slk.test/api/auth/login',{method:'POST',headers:{origin:'https://slk.test','content-type':'application/json'},body:JSON.stringify({email:'cloudflare@example.test',password:'Worker supported passphrase'})});assert.equal(login.status,200,await login.clone().text());
+
+ await db.prepare("UPDATE users SET membership='active',expires='2099-12-31' WHERE email=?").bind('cloudflare@example.test').run();
+ const memberPost=(path,body)=>mf.dispatchFetch('https://slk.test/api'+path,{method:'POST',headers:{origin:'https://slk.test','content-type':'application/json',cookie},body:JSON.stringify(body)});
+ const claimed=await memberPost('/claim',{id:'voucher-example'});assert.equal(claimed.status,200);const claim=await claimed.json();
+ const wallet=await mf.dispatchFetch('https://slk.test/api/wallet',{headers:{cookie}});const stored=(await wallet.json()).claims.find(c=>c.id===claim.id);assert.equal(stored.redeemable,true);
+ const redeemed=await memberPost('/redeem',{id:claim.id,confirm:true});assert.equal(redeemed.status,200);const receipt=await redeemed.json();assert.equal(receipt.claim.status,'redeemed');assert.equal(receipt.claim.receipt.code,claim.code);
+ assert.equal((await memberPost('/redeem',{id:claim.id,confirm:true})).status,409);
+ for(const [route,heading] of [['/membership','You belong'],['/sponsor','Good business.'],['/donate','Give a little love.']]){
+   const page=await mf.dispatchFetch('https://slk.test'+route);const html=await page.text();assert.ok(html.includes(heading),route+' missing redesigned heading');assert.ok(html.includes('Get involved'),route+' missing navigation dropdown');
+ }
+ console.log('PASS: claim/wallet/redemption works in the built Worker and redesigned involvement routes render their content.');
  console.log('PASS: email/password signup and login work in Cloudflare WebCrypto with D1 and session cookies; no ChatGPT headers.');
  console.log('PASS: all 12 routes render through the built Cloudflare Worker; D1-backed API, sign-in initialization and R2 image upload/read respond correctly.');
 }finally{await mf.dispose()}

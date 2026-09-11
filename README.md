@@ -6,7 +6,7 @@ Independent redesign based on `vanwykkelvin16-ossou/so-love-vouchers` and SLKD's
 
 - Responsive public website: home, story, events, business directory, vouchers, membership, sponsorship, donations, contact and privacy.
 - Member accounts, payment-verification status, annual membership expiry, voucher wallet/history, event registrations and business-profile submissions.
-- Server-side membership gating, atomic single-claim limits and one-time redemption.
+- Server-side membership gating, atomic single-claim limits and one-time redemption. Members claim vouchers into their wallet, open a voucher in front of staff and explicitly confirm redemption. The server checks ownership, active membership, publication and expiry before recording the use. A receipt keeps the offer details, member name, code and timestamp; past receipts cannot be used again. Live status refreshes while the voucher is open, and the “just redeemed” treatment ends after two minutes.
 - Admin management of events, vouchers, businesses, sponsors, members, enquiries, donation pledges, membership payments, website settings and activity history. Published content updates the public site. Deletion archives records to preserve history.
 - Cloudflare D1 persistence and R2 image uploads. Original Supabase credentials are disconnected.
 - PWA manifest, installable app icon and offline fallback. Protected pages and APIs are never cached by the service worker.
@@ -48,3 +48,7 @@ All new work is stored in `vanwykkelvin16-ossou/elk-new-demo`. No source remote 
 ## Navigation
 
 The shared app shell stays mounted across routes. Internal links use TanStack navigation, including event details and member/admin tabs. Initial account checks show a neutral loading state rather than briefly displaying a sign-in form.
+
+## Mobile and involvement pages
+
+The navigation includes a Get involved dropdown for Membership, Sponsorship and Donations. Membership uses a welcoming photo-led introduction, benefit cards, annual plan and clear joining steps. Sponsorship and Donations have distinct introductions and focused enquiry/pledge forms. Mobile layouts use fluid grids, readable spacing, touch-friendly controls and dialogs that fit the available screen height. Donation choices remain pledges; no card payment is processed.

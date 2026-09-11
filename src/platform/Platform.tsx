@@ -1,4 +1,4 @@
-import { useEffect, useState, createContext, useContext } from "react";
+import { useEffect, useState, useRef, createContext, useContext } from "react";
 import { useLocation, useRouter } from "@tanstack/react-router";
 import {
   ArrowUpRight,
@@ -27,6 +27,8 @@ import {
   Trash2,
   Pencil,
   ChevronRight,
+  ChevronDown,
+  RefreshCw,
   Activity,
   FileText,
   ExternalLink,
@@ -48,6 +50,12 @@ import {
   AlertDialogCancel,
   AlertDialogAction,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import { Toaster, toast } from "sonner";
 import { api, money, dateLabel } from "./client";
 import { defaultSettings, initialEntities } from "./seed";
@@ -76,15 +84,46 @@ const adminNav = [
 // Keep document state while navigating; modified clicks and external links stay native.
 function AppLink({ href, onClick, children, ...props }: any) {
   const router = useRouter();
-  return <a href={href} {...props} onClick={(event) => {
-    onClick?.(event);
-    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || props.target || props.download !== undefined || !href?.startsWith("/") || href.startsWith("//") || /^\/(sign(in|out)-with-chatgpt|api)\b/.test(href)) return;
-    event.preventDefault();
-    void router.navigate({ href, resetScroll: href.split("?")[0] !== router.state.location.pathname });
-  }}>{children}</a>;
+  return (
+    <a
+      href={href}
+      {...props}
+      onClick={(event) => {
+        onClick?.(event);
+        if (
+          event.defaultPrevented ||
+          event.button !== 0 ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.altKey ||
+          props.target ||
+          props.download !== undefined ||
+          !href?.startsWith("/") ||
+          href.startsWith("//") ||
+          /^\/(sign(in|out)-with-chatgpt|api)\b/.test(href)
+        )
+          return;
+        event.preventDefault();
+        void router.navigate({
+          href,
+          resetScroll: href.split("?")[0] !== router.state.location.pathname,
+        });
+      }}
+    >
+      {children}
+    </a>
+  );
 }
 function SessionLoading() {
-  return <div className="page-wrap" aria-busy="true" role="status"><div className="account-loading"><Heart size={28} /><span>Opening your account…</span></div></div>;
+  return (
+    <div className="page-wrap" aria-busy="true" role="status">
+      <div className="account-loading">
+        <Heart size={28} />
+        <span>Opening your account…</span>
+      </div>
+    </div>
+  );
 }
 function Logo() {
   return (
@@ -155,7 +194,11 @@ function Badge({ children, tone = "" }: any) {
 function Header() {
   const { session, path, search } = useSite();
   const [open, setOpen] = useState(false);
-  useEffect(() => setOpen(false), [path, search.toString()]);
+  const [involvedOpen, setInvolvedOpen] = useState(false);
+  useEffect(() => {
+    setOpen(false);
+    setInvolvedOpen(false);
+  }, [path, search.toString()]);
   return (
     <>
       <div className="topbar">
@@ -166,12 +209,53 @@ function Header() {
       </div>
       <header className="header">
         <Logo />
-        <nav className={open ? "nav open" : "nav"} aria-label="Main navigation">
+        <nav
+          id="main-navigation"
+          className={open ? "nav open" : "nav"}
+          aria-label="Main navigation"
+        >
           {publicNav.map(([href, label]) => (
             <AppLink key={href} href={href} className={path === href ? "active" : ""}>
               {label}
             </AppLink>
           ))}
+          <DropdownMenu open={involvedOpen} onOpenChange={setInvolvedOpen}>
+            <DropdownMenuTrigger asChild>
+              <button
+                className={
+                  "involved-trigger " +
+                  (["/membership", "/sponsor", "/donate"].includes(path) ? "active" : "")
+                }
+              >
+                Get involved <ChevronDown size={15} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="involved-dropdown" align="start" sideOffset={12}>
+              {[
+                [
+                  "/membership",
+                  "Become a member",
+                  "Belong, connect and enjoy local benefits",
+                  Users,
+                ],
+                ["/sponsor", "Become a sponsor", "Put your business behind local good", Building2],
+                ["/donate", "Give a donation", "Support the community you care about", HandHeart],
+              ].map(([href, title, description, Icon]: any) => (
+                <DropdownMenuItem asChild key={href}>
+                  <AppLink href={href}>
+                    <span className="involved-icon">
+                      <Icon size={20} />
+                    </span>
+                    <span>
+                      <strong>{title}</strong>
+                      <small>{description}</small>
+                    </span>
+                    <ArrowUpRight size={16} />
+                  </AppLink>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <AppLink className="mobile-only" href="/contact">
             Contact us
           </AppLink>
@@ -186,6 +270,8 @@ function Header() {
           <button
             className="menu-toggle"
             aria-label={open ? "Close menu" : "Open menu"}
+            aria-expanded={open}
+            aria-controls="main-navigation"
             onClick={() => setOpen(!open)}
           >
             {open ? <X /> : <Menu />}
@@ -224,7 +310,9 @@ function Footer() {
         </div>
         <div>
           <h4>Let's connect</h4>
-          <AppLink href={"tel:" + data.settings.phone.replace(/\s/g, "")}>{data.settings.phone}</AppLink>
+          <AppLink href={"tel:" + data.settings.phone.replace(/\s/g, "")}>
+            {data.settings.phone}
+          </AppLink>
           <span>Krugersdorp, Gauteng</span>
           <AppLink href="/member">
             Member portal <ArrowUpRight size={14} />
@@ -619,6 +707,21 @@ function Vouchers() {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Item | null>(null);
   const [busy, setBusy] = useState(false);
+  const [claims, setClaims] = useState<Item[]>([]);
+  useEffect(() => {
+    setClaims([]);
+    let current = true;
+    if (session.user)
+      api("/wallet")
+        .then((r) => {
+          if (current) setClaims(r.claims);
+        })
+        .catch(() => {});
+    return () => {
+      current = false;
+    };
+  }, [session.user?.id]);
+  const owned = claims.find((c) => c.voucher_id === selected?.id);
   const items = data.entities
     .filter(
       (i: Item) =>
@@ -630,9 +733,12 @@ function Vouchers() {
   const claim = async () => {
     setBusy(true);
     try {
-      await api("/claim", { id: selected?.id });
-      toast.success("Voucher added to your wallet.");
-      setSelected(null);
+      const result = await api("/claim", { id: selected?.id });
+      setClaims((c) => [
+        ...c,
+        { id: result.id, voucher_id: selected?.id, status: "available", code: result.code },
+      ]);
+      toast.success("Claimed! Your voucher is waiting in your wallet.");
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -680,7 +786,13 @@ function Vouchers() {
               <p>Valid until {dateLabel(i.expires)}</p>
               <div className="ticket-divider" />
               <div className="card-foot">
-                <span>{session.user?.active ? "View & claim" : "Members-only access"}</span>
+                <span>
+                  {claims.some((c) => c.voucher_id === i.id)
+                    ? "In your wallet"
+                    : session.user?.active
+                      ? "View & claim"
+                      : "Members-only access"}
+                </span>
                 {session.user?.active ? <ArrowUpRight size={19} /> : <LockKeyhole size={17} />}
               </div>
             </div>
@@ -716,9 +828,26 @@ function Vouchers() {
                 </p>
                 <p>Expires: {dateLabel(selected.expires)}</p>
               </div>
-              {session.user?.active ? (
+              {owned ? (
+                <div className="claim-success" role="status">
+                  <span className="claim-success-icon">
+                    <Check size={24} />
+                  </span>
+                  <h3>
+                    {owned.status === "redeemed" ? "Already redeemed" : "Claimed. It's yours."}
+                  </h3>
+                  <p>
+                    {owned.status === "redeemed"
+                      ? "Your receipt is saved in your wallet."
+                      : "Keep it in your wallet until you are ready to redeem with staff."}
+                  </p>
+                  <Button href={"/member?tab=wallet&claim=" + owned.id}>
+                    Open my wallet <ArrowRight size={17} />
+                  </Button>
+                </div>
+              ) : session.user?.active ? (
                 <Button onClick={claim} disabled={busy}>
-                  {busy ? "Claiming…" : "Add to my vouchers"} <Ticket size={16} />
+                  {busy ? "Claiming…" : "Claim this voucher"} <Ticket size={16} />
                 </Button>
               ) : (
                 <>
@@ -838,98 +967,210 @@ function Businesses() {
     </div>
   );
 }
+function InvolvementNav({ current }: { current: string }) {
+  return (
+    <nav className="involvement-nav" aria-label="Ways to get involved">
+      {[
+        ["/membership", "Membership"],
+        ["/sponsor", "Sponsorship"],
+        ["/donate", "Donations"],
+      ].map(([href, label]) => (
+        <AppLink
+          href={href}
+          key={href}
+          aria-current={current === href ? "page" : undefined}
+          className={current === href ? "selected" : ""}
+        >
+          {label}
+        </AppLink>
+      ))}
+    </nav>
+  );
+}
 function Membership() {
   const { data, session } = useSite();
+  const join = session.user ? "/member?tab=membership" : "/member?tab=membership&auth=signup";
+  const benefits = [
+    [
+      Ticket,
+      "Little perks. Local love.",
+      "Discover member vouchers from participating businesses. Claim, save and redeem from your phone.",
+    ],
+    [
+      Building2,
+      "Let your business belong.",
+      "Create your business profile, join the directory and make meaningful local connections.",
+    ],
+    [
+      CalendarDays,
+      "Make time for good company.",
+      "Find community gatherings and networking events, then keep your registrations together.",
+    ],
+    [
+      Users,
+      "A community in your pocket.",
+      "Your own account brings your membership, vouchers, history and business details into one place.",
+    ],
+  ] as const;
   return (
-    <div className="page-wrap">
-      <PageTitle
-        eyebrow="BELONG TO SOMETHING GOOD"
-        title="Your community. Your membership."
-        description="Support local connections and enjoy the benefits of being part of So Love Krugersdorp."
-      />
-      <div className="membership-grid">
-        <div className="benefit-list">
-          <h2>
-            More than a membership.
-            <br />A place to belong.
-          </h2>
-          {[
-            ["A community of connections", "Meet people who share your care for our town."],
-            [
-              "Member-only vouchers",
-              "Claim local offers and keep your voucher history in one place.",
-            ],
-            [
-              "A place for your business",
-              "Create your business profile and connect with the network.",
-            ],
-            ["Moments that matter", "Discover events and register your interest."],
-          ].map(([t, d]) => (
-            <div className="benefit-row" key={t}>
+    <div className="membership-page involvement-page">
+      <InvolvementNav current="/membership" />
+      <section className="join-hero">
+        <div className="join-copy">
+          <Eyebrow>SO LOVE KRUGERSDORP MEMBERSHIP</Eyebrow>
+          <h1>
+            You belong
+            <br />
+            <span>here.</span>
+            <Heart className="join-heart" strokeWidth={1.5} />
+          </h1>
+          <p>
+            A familiar face. A new connection. A little more local love. Become part of a community
+            that cares about Krugersdorp — and the people who call it home.
+          </p>
+          <div className="join-actions">
+            <Button href={join}>
+              {session.user?.active ? "My membership" : "Yes, I'd love to join"}
+              <ArrowUpRight size={19} />
+            </Button>
+            <span>
+              {money(data.settings.membershipPrice)}
+              <small>per year, after payment verification</small>
+            </span>
+          </div>
+          <div className="join-reassurance">
+            <ShieldCheck size={17} />
+            <span>Your own account. Your local community.</span>
+          </div>
+        </div>
+        <div className="join-visual">
+          <img src="/community/gathering.jpg" alt="The Krugersdorp community coming together" />
+          <span className="join-photo-label">
+            <MapPin size={14} />
+            Made of local moments
+          </span>
+          <div className="membership-pass">
+            <div>
+              <img src="/brand-heart.png" alt="" />
               <span>
-                <Check size={19} />
+                so love<small>KRUGERSDORP</small>
               </span>
-              <div>
-                <h3>{t}</h3>
-                <p>{d}</p>
-              </div>
+              <ArrowUpRight size={25} />
             </div>
+            <strong>Your local circle.</strong>
+            <p>Connections. Community. A little extra love.</p>
+            <div className="pass-bottom">
+              <span>ANNUAL MEMBERSHIP</span>
+              <span>Membership preview</span>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section className="join-benefits" aria-labelledby="membership-benefits">
+        <div className="join-section-heading">
+          <Eyebrow>MORE REASONS TO BELONG</Eyebrow>
+          <h2 id="membership-benefits">
+            Good things happen
+            <br />
+            when we come together.
+          </h2>
+          <p>Make the most of your town, with a membership that keeps you connected.</p>
+        </div>
+        <div className="join-benefit-grid">
+          {benefits.map(([Icon, title, description]) => (
+            <article className="join-benefit" key={title}>
+              <span>
+                <Icon size={25} strokeWidth={1.5} />
+              </span>
+              <h3>{title}</h3>
+              <p>{description}</p>
+            </article>
           ))}
         </div>
-        <div className="pricing-card">
-          <Badge>ANNUAL MEMBERSHIP</Badge>
+      </section>
+      <section className="join-plan" aria-labelledby="membership-plan">
+        <div className="join-plan-copy">
+          <Eyebrow>ONE YEAR OF LOCAL LOVE</Eyebrow>
+          <h2 id="membership-plan">
+            A small commitment.
+            <br />A meaningful connection.
+          </h2>
+          <p>
+            Join for yourself, your business and your community. Everything starts with a simple
+            account.
+          </p>
+          <div className="join-steps">
+            {[
+              ["01", "Make yourself at home", "Create your account with your email and password."],
+              [
+                "02",
+                "Complete your membership",
+                "Send your membership request and arrange payment with the team.",
+              ],
+              [
+                "03",
+                "Enjoy your local circle",
+                "Once payment is verified, claim vouchers and share your business.",
+              ],
+            ].map(([step, title, description]) => (
+              <div key={step}>
+                <span>{step}</span>
+                <div>
+                  <h3>{title}</h3>
+                  <p>{description}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="pricing-card welcome-price">
+          <div className="plan-label">
+            <Badge>YOUR ANNUAL MEMBERSHIP</Badge>
+            <Heart size={26} strokeWidth={1.4} />
+          </div>
           <h3>
-            A little commitment.
-            <br />A lot of local love.
+            A whole year.
+            <br />A little more connected.
           </h3>
           <div className="price">
             {money(data.settings.membershipPrice)}
             <span>/ year</span>
           </div>
-          <p>One membership. Your connection to the community.</p>
+          <p>One membership for your local circle.</p>
           <hr />
           <ul>
-            <li>
-              <Check />
-              Local voucher access
-            </li>
-            <li>
-              <Check />
-              Business profile & directory
-            </li>
-            <li>
-              <Check />
-              Your personal member portal
-            </li>
-            <li>
-              <Check />
-              Voucher wallet & history
-            </li>
+            {[
+              "Member voucher access",
+              "Your business profile & directory",
+              "Personal voucher wallet & history",
+              "Events and your member portal",
+            ].map((t) => (
+              <li key={t}>
+                <Check size={17} />
+                {t}
+              </li>
+            ))}
           </ul>
-          <Button href={session.user ? "/member?tab=membership" : "/member?tab=membership&auth=signup"}>
-            {session.user?.active ? "View my membership" : "Become a member"}{" "}
-            <ArrowUpRight size={17} />
+          <Button href={join}>
+            {session.user?.active ? "View my membership" : "Become a member"}
+            <ArrowUpRight size={18} />
           </Button>
-          <small>Membership starts after the team verifies your payment.</small>
+          <small>
+            Benefits start after the team verifies your payment. Creating an account does not charge
+            you.
+          </small>
         </div>
-      </div>
-      <div className="steps">
+      </section>
+      <section className="join-help">
         <div>
-          <span>01</span>
-          <h3>Create your account</h3>
-          <p>Sign in and tell us a little about yourself.</p>
+          <Eyebrow>A FRIENDLY FACE IS NEVER FAR AWAY</Eyebrow>
+          <h2>New here? Let's connect.</h2>
+          <p>Have a question about joining or your membership? The SLKD team is here to help.</p>
         </div>
-        <div>
-          <span>02</span>
-          <h3>Arrange your payment</h3>
-          <p>Submit your membership request and payment reference.</p>
-        </div>
-        <div>
-          <span>03</span>
-          <h3>You're part of the community</h3>
-          <p>Once verified, your member benefits are ready to use.</p>
-        </div>
-      </div>
+        <Button href="/contact" className="outline">
+          Talk to the team <ArrowRight size={18} />
+        </Button>
+      </section>
     </div>
   );
 }
@@ -973,8 +1214,28 @@ function RequestForm({ kind, onDone }: any) {
     );
   return (
     <form onSubmit={submit} className="form-grid">
+      {kind === "donation" && (
+        <fieldset className="pledge-picker">
+          <legend>Choose your pledge</legend>
+          <div>
+            {[100, 240, 500, 1000].map((amount) => (
+              <button
+                key={amount}
+                type="button"
+                aria-pressed={Number(values.amount) === amount}
+                className={Number(values.amount) === amount ? "selected" : ""}
+                onClick={() => set("amount", amount)}
+              >
+                {money(amount)}
+              </button>
+            ))}
+          </div>
+          <small>Or enter another amount below.</small>
+        </fieldset>
+      )}
       <Field
         label="Full name"
+        autoComplete="name"
         value={values.name}
         required
         maxLength={120}
@@ -983,6 +1244,7 @@ function RequestForm({ kind, onDone }: any) {
       <Field
         label="Email address"
         type="email"
+        autoComplete="email"
         value={values.email}
         required
         onChange={(e: any) => set("email", e.target.value)}
@@ -990,6 +1252,7 @@ function RequestForm({ kind, onDone }: any) {
       <Field
         label="Phone number"
         type="tel"
+        autoComplete="tel"
         value={values.phone}
         onChange={(e: any) => set("phone", e.target.value)}
       />
@@ -1061,72 +1324,154 @@ function RequestForm({ kind, onDone }: any) {
     </form>
   );
 }
-function Giving({ kind }: any) {
+function Giving({ kind }: { kind: "sponsor" | "donation" }) {
   const { data } = useSite();
+  const sponsor = kind === "sponsor";
+  const partners = data.entities.filter((e: Item) => e.kind === "sponsors");
   return (
-    <div className="page-wrap">
-      <PageTitle
-        eyebrow={kind === "sponsor" ? "PARTNER WITH PURPOSE" : "GIVE CLOSE TO HOME"}
-        title={
-          kind === "sponsor"
-            ? "Your business. A bigger difference."
-            : "A little generosity goes a long way."
-        }
-        description={
-          kind === "sponsor"
-            ? "Bring your resources, skills and care to a community that needs all of us."
-            : data.settings.donationIntro
-        }
-      />
-      <div className="giving-grid">
-        <div>
-          <img
-            src="/community/team.jpg"
-            className="giving-image"
-            alt="Local community members working together"
-          />
-          <h2>{kind === "sponsor" ? "Together, we can do more." : "Turn care into action."}</h2>
-          <p>
-            {kind === "sponsor"
-              ? "Sponsor an initiative, offer a service or contribute to a community event. Tell us what you have in mind and we will find a way to work together."
-              : "Every contribution starts a conversation about what our community needs. Pledge an amount and our team will help you with the next step."}
-          </p>
-          <div className="giving-points">
-            <span>
-              <Heart />
-              Community initiatives
-            </span>
-            <span>
-              <Users />
-              Local opportunities
-            </span>
-            <span>
-              <HandHeart />
-              Practical support
-            </span>
-          </div>
-        </div>
-        <div className="form-card">
-          <h3>{kind === "sponsor" ? "Let’s make a connection" : "Make a donation pledge"}</h3>
-          <RequestForm kind={kind} />
-        </div>
+    <div className={"involvement-page giving-page " + (sponsor ? "sponsor-page" : "donation-page")}>
+      <InvolvementNav current={sponsor ? "/sponsor" : "/donate"} />
+      <div className="giving-intro">
+        <Eyebrow>
+          {sponsor ? "PARTNER WITH PURPOSE" : "A LITTLE GENEROSITY. CLOSE TO HOME."}
+        </Eyebrow>
+        <h1>
+          {sponsor ? (
+            <>
+              Good business.
+              <br />
+              <span>Even greater purpose.</span>
+            </>
+          ) : (
+            <>
+              Give a little love.
+              <br />
+              <span>Make it local.</span>
+            </>
+          )}
+        </h1>
+        <p>
+          {sponsor
+            ? "Bring your business, your skills and your heart. Together, we can create more moments that matter for Krugersdorp."
+            : data.settings.donationIntro}
+        </p>
       </div>
-      {kind === "sponsor" && (
-        <div className="section">
-          <h2>Our partners in good.</h2>
-          <div className="business-grid">
-            {data.entities
-              .filter((e: Item) => e.kind === "sponsors")
-              .map((e: Item) => (
-                <AppLink href={e.website || "/contact"} className="business-card" key={e.id}>
-                  {e.image && <img className="sponsor-logo" src={e.image} alt={e.title} />}
-                  <h3>{e.title}</h3>
-                  <p>{e.description}</p>
-                </AppLink>
-              ))}
+      <div className="giving-layout">
+        <div className="giving-story">
+          <div className="giving-photo">
+            <img
+              src={sponsor ? "/community/team.jpg" : "/community/outreach.jpg"}
+              alt={
+                sponsor
+                  ? "Local community members coming together"
+                  : "A So Love Krugersdorp community gathering"
+              }
+            />
+            <span>
+              <Heart size={17} />
+              {sponsor ? "Better, together." : "Care starts close to home."}
+            </span>
+          </div>
+          <div className="giving-story-copy">
+            <h2>
+              {sponsor
+                ? "There is more than one way to make a difference."
+                : "Your generosity starts something good."}
+            </h2>
+            <p>
+              {sponsor
+                ? "Support a community event, share your expertise or offer practical resources. Tell us what feels right for your business and we will explore the possibilities together."
+                : "Choose an amount that feels right for you. Your pledge goes to the SLKD team, who will contact you to arrange your donation and discuss how you would like to help."}
+            </p>
+          </div>
+          <div className="giving-options">
+            {(sponsor
+              ? [
+                  [CalendarDays, "Support an event", "Help bring people together."],
+                  [Building2, "Share your skills", "Offer your time, services or expertise."],
+                  [
+                    HandHeart,
+                    "Give practical support",
+                    "Contribute resources where they can help.",
+                  ],
+                ]
+              : [
+                  [
+                    Heart,
+                    "Choose your contribution",
+                    "Every pledge begins with what you can give.",
+                  ],
+                  [Users, "Connect with the team", "We will help arrange your donation."],
+                  [HandHeart, "Support local good", "Be part of a community that shows up."],
+                ]
+            ).map(([Icon, title, description]: any) => (
+              <div key={title}>
+                <span>
+                  <Icon size={22} />
+                </span>
+                <div>
+                  <h3>{title}</h3>
+                  <p>{description}</p>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
+        <section className="form-card giving-form" aria-labelledby="giving-form-title">
+          <div className="giving-form-heading">
+            <span className="icon-square">{sponsor ? <Building2 /> : <HandHeart />}</span>
+            <Eyebrow>{sponsor ? "LET'S WORK TOGETHER" : "YOUR CONTRIBUTION"}</Eyebrow>
+            <h2 id="giving-form-title">
+              {sponsor ? "Start something good." : "Make a donation pledge."}
+            </h2>
+            <p>
+              {sponsor
+                ? "Tell us a little about your business and how you would like to get involved."
+                : "Choose an amount below or enter your own. The team will follow up with payment arrangements."}
+            </p>
+          </div>
+          <RequestForm key={kind} kind={kind} />
+          <div className="giving-form-help">
+            <Mail size={16} />
+            <span>
+              Prefer a conversation? <AppLink href="/contact">Contact the team</AppLink>
+            </span>
+          </div>
+        </section>
+      </div>
+      {sponsor && partners.length > 0 && (
+        <section className="partner-section">
+          <div className="portal-section-heading">
+            <h2>Our partners in good.</h2>
+            <p>Local organisations making room for community.</p>
+          </div>
+          <div className="business-grid">
+            {partners.map((e: Item) => (
+              <AppLink href={e.website || "/contact"} className="business-card" key={e.id}>
+                {e.image && <img className="sponsor-logo" src={e.image} alt={e.title} />}
+                <h3>{e.title}</h3>
+                <p>{e.description}</p>
+              </AppLink>
+            ))}
+          </div>
+        </section>
       )}
+      <section className="join-help">
+        <div>
+          <h2>
+            {sponsor ? "A different way to get involved?" : "Give your business a local purpose."}
+          </h2>
+          <p>
+            {sponsor
+              ? "Join as a member or pledge a donation. Every connection counts."
+              : "Explore sponsorship if you would like to contribute services, resources or event support."}
+          </p>
+        </div>
+        <Button href={sponsor ? "/membership" : "/sponsor"} className="outline">
+          {sponsor ? "Explore membership" : "Become a sponsor"}
+          <ArrowRight size={18} />
+        </Button>
+      </section>
     </div>
   );
 }
@@ -1179,40 +1524,144 @@ function SignIn() {
     <div className="signin-panel">
       <div>
         <Eyebrow>YOUR COMMUNITY, IN YOUR POCKET</Eyebrow>
-        <h1>Welcome to<br />your local circle.</h1>
+        <h1>
+          Welcome to
+          <br />
+          your local circle.
+        </h1>
         <p>Keep your vouchers, events and business profile together in your member account.</p>
         <div className="signin-benefits">
-          <span><Ticket />Your voucher wallet</span>
-          <span><Building2 />Your business profile</span>
-          <span><Users />Your community</span>
+          <span>
+            <Ticket />
+            Your voucher wallet
+          </span>
+          <span>
+            <Building2 />
+            Your business profile
+          </span>
+          <span>
+            <Users />
+            Your community
+          </span>
         </div>
       </div>
       <div className="form-card">
-        <div className="icon-square"><Heart /></div>
+        <div className="icon-square">
+          <Heart />
+        </div>
         <h2>{signup ? "Become part of the community." : "Good to have you here."}</h2>
-        <p>{signup ? "Create your account, then complete your membership application." : "Sign in with your email and password."}</p>
-        <form className="form-grid" onSubmit={async (event) => {
-          event.preventDefault();
-          if (busy) return;
-          const values = Object.fromEntries(new FormData(event.currentTarget));
-          setBusy(true); setError("");
-          try {
-            await api(signup ? "/auth/signup" : "/auth/login", {...values, consent: values.consent === "on"});
-            await refresh();
-          } catch (e: any) { setError(e.message); }
-          finally { setBusy(false); }
-        }}>
-          {signup && <Field label="Full name" name="name" autoComplete="name" required minLength={2} maxLength={120} />}
-          <Field label="Email address" name="email" type="email" autoComplete="username" required maxLength={254} />
-          <Field label="Password" name="password" type="password" autoComplete={signup ? "new-password" : "current-password"} required minLength={signup ? 12 : undefined} maxLength={256} />
-          {signup && <><small>Choose a password with at least 12 characters.</small><label className="auth-consent"><input type="checkbox" name="consent" required /><span>I agree to the <AppLink href="/privacy" target="_blank" rel="noreferrer">privacy notice</AppLink>.</span></label></>}
-          {error && <p className="auth-error" role="alert">{error}</p>}
-          <Button type="submit" disabled={busy}>{busy ? "Please wait…" : signup ? "Create my member account" : "Sign in"}<ArrowRight size={18}/></Button>
+        <p>
+          {signup
+            ? "Create your account, then complete your membership application."
+            : "Sign in with your email and password."}
+        </p>
+        <form
+          className="form-grid"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            if (busy) return;
+            const values = Object.fromEntries(new FormData(event.currentTarget));
+            setBusy(true);
+            setError("");
+            try {
+              await api(signup ? "/auth/signup" : "/auth/login", {
+                ...values,
+                consent: values.consent === "on",
+              });
+              await refresh();
+            } catch (e: any) {
+              setError(e.message);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {signup && (
+            <Field
+              label="Full name"
+              name="name"
+              autoComplete="name"
+              required
+              minLength={2}
+              maxLength={120}
+            />
+          )}
+          <Field
+            label="Email address"
+            name="email"
+            type="email"
+            autoComplete="username"
+            required
+            maxLength={254}
+          />
+          <Field
+            label="Password"
+            name="password"
+            type="password"
+            autoComplete={signup ? "new-password" : "current-password"}
+            required
+            minLength={signup ? 12 : undefined}
+            maxLength={256}
+          />
+          {signup && (
+            <>
+              <small>Choose a password with at least 12 characters.</small>
+              <label className="auth-consent">
+                <input type="checkbox" name="consent" required />
+                <span>
+                  I agree to the{" "}
+                  <AppLink href="/privacy" target="_blank" rel="noreferrer">
+                    privacy notice
+                  </AppLink>
+                  .
+                </span>
+              </label>
+            </>
+          )}
+          {error && (
+            <p className="auth-error" role="alert">
+              {error}
+            </p>
+          )}
+          <Button type="submit" disabled={busy}>
+            {busy ? "Please wait…" : signup ? "Create my member account" : "Sign in"}
+            <ArrowRight size={18} />
+          </Button>
         </form>
-        <button type="button" className="text-link auth-switch" disabled={busy} onClick={() => {setSignup(!signup);setError("");}}>{signup ? "Already have an account? Sign in" : "New here? Create your account"}</button>
+        <button
+          type="button"
+          className="text-link auth-switch"
+          disabled={busy}
+          onClick={() => {
+            setSignup(!signup);
+            setError("");
+          }}
+        >
+          {signup ? "Already have an account? Sign in" : "New here? Create your account"}
+        </button>
         <small>Voucher benefits become available after your membership payment is verified.</small>
-        {!signup && <details className="legacy-signin"><summary>Already have an account from the earlier demo?</summary><p>Use your previous sign-in once, then set a password under My details to keep your existing membership and history.</p><form action="/api/auth/legacy" method="post" target="_top"><input type="hidden" name="returnTo" value={path.startsWith("/admin") ? "/admin" : "/member?tab=profile"}/><button className="text-link" type="submit">Use previous sign-in</button></form></details>}
-        <AppLink className="text-link" href="/contact">Need help signing in?</AppLink>
+        {!signup && (
+          <details className="legacy-signin">
+            <summary>Already have an account from the earlier demo?</summary>
+            <p>
+              Use your previous sign-in once, then set a password under My details to keep your
+              existing membership and history.
+            </p>
+            <form action="/api/auth/legacy" method="post" target="_top">
+              <input
+                type="hidden"
+                name="returnTo"
+                value={path.startsWith("/admin") ? "/admin" : "/member?tab=profile"}
+              />
+              <button className="text-link" type="submit">
+                Use previous sign-in
+              </button>
+            </form>
+          </details>
+        )}
+        <AppLink className="text-link" href="/contact">
+          Need help signing in?
+        </AppLink>
       </div>
     </div>
   );
@@ -1221,34 +1670,99 @@ function PasswordForm() {
   const { session, refresh } = useSite();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  return <section className="password-section"><h3>{session.user.hasPassword ? "Change your password" : "Set up email sign-in"}</h3>
-    <p>Use {session.user.email} and your password to sign in to your account.</p>
-    <form className="form-grid" onSubmit={async (event) => {
-      event.preventDefault(); if (busy) return;
-      const form = event.currentTarget;
-      const values = Object.fromEntries(new FormData(form));
-      if (values.password !== values.confirmPassword) {setError("Your passwords do not match.");return;}
-      setBusy(true);setError("");
-      try {await api("/auth/password", values);form.reset();await refresh();toast.success("Your password has been saved.");}
-      catch (e: any) {setError(e.message);} finally {setBusy(false);}
-    }}>
-      {session.user.hasPassword && <Field label="Current password" type="password" name="currentPassword" autoComplete="current-password" required maxLength={256}/>}
-      <Field label="New password (at least 12 characters)" type="password" name="password" autoComplete="new-password" minLength={12} maxLength={256} required/>
-      <Field label="Confirm new password" type="password" name="confirmPassword" autoComplete="new-password" minLength={12} maxLength={256} required/>
-      {error && <p role="alert" className="auth-error">{error}</p>}
-      <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save password"}</Button>
-    </form>
-  </section>;
+  return (
+    <section className="password-section">
+      <h3>{session.user.hasPassword ? "Change your password" : "Set up email sign-in"}</h3>
+      <p>Use {session.user.email} and your password to sign in to your account.</p>
+      <form
+        className="form-grid"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (busy) return;
+          const form = event.currentTarget;
+          const values = Object.fromEntries(new FormData(form));
+          if (values.password !== values.confirmPassword) {
+            setError("Your passwords do not match.");
+            return;
+          }
+          setBusy(true);
+          setError("");
+          try {
+            await api("/auth/password", values);
+            form.reset();
+            await refresh();
+            toast.success("Your password has been saved.");
+          } catch (e: any) {
+            setError(e.message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {session.user.hasPassword && (
+          <Field
+            label="Current password"
+            type="password"
+            name="currentPassword"
+            autoComplete="current-password"
+            required
+            maxLength={256}
+          />
+        )}
+        <Field
+          label="New password (at least 12 characters)"
+          type="password"
+          name="password"
+          autoComplete="new-password"
+          minLength={12}
+          maxLength={256}
+          required
+        />
+        <Field
+          label="Confirm new password"
+          type="password"
+          name="confirmPassword"
+          autoComplete="new-password"
+          minLength={12}
+          maxLength={256}
+          required
+        />
+        {error && (
+          <p role="alert" className="auth-error">
+            {error}
+          </p>
+        )}
+        <Button type="submit" disabled={busy}>
+          {busy ? "Saving…" : "Save password"}
+        </Button>
+      </form>
+    </section>
+  );
 }
 function SignOut() {
-  const {refresh} = useSite();
+  const { refresh } = useSite();
   const router = useRouter();
-  const [busy,setBusy] = useState(false);
-  return <button className="text-link" disabled={busy} onClick={async () => {
-    setBusy(true);
-    try {await api("/auth/logout", {}); await refresh(); await router.navigate({href:"/"});}
-    catch(e: any) {toast.error(e.message);} finally {setBusy(false);}
-  }}>Sign out <LogOut size={16}/></button>;
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      className="text-link"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          await api("/auth/logout", {});
+          await refresh();
+          await router.navigate({ href: "/" });
+        } catch (e: any) {
+          toast.error(e.message);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      Sign out <LogOut size={16} />
+    </button>
+  );
 }
 function Upload({ value, onChange }: any) {
   const [busy, setBusy] = useState(false);
@@ -1402,45 +1916,13 @@ function Member() {
           </div>
         </>
       )}
-      {tab === "wallet" && (
-        <>
-          <h2>Your voucher wallet</h2>
-          <p className="muted">
-            Present your code to the SLKD team for validation. Each voucher can be redeemed once.
-          </p>
-          {!member.claims.length ? (
-            <Empty
-              title="Your wallet is ready for a little local love"
-              description="Claim your first voucher to get started."
-            >
-              <Button href="/vouchers">
-                Browse vouchers <ArrowRight size={16} />
-              </Button>
-            </Empty>
-          ) : (
-            <div className="wallet-grid">
-              {member.claims.map((c: Item) => {
-                const v = data.entities.find((i: Item) => i.id === c.voucher_id);
-                return (
-                  <div className="wallet-card" key={c.id}>
-                    <Badge tone={c.status === "redeemed" ? "" : "green"}>{c.status}</Badge>
-                    <h3>{v?.title || "Archived offer"}</h3>
-                    <p>{v?.business}</p>
-                    <code>{c.code}</code>
-                    <p>Claimed {new Date(c.created_at).toLocaleDateString("en-ZA")}</p>
-                    {c.redeemed_at && (
-                      <p>Redeemed {new Date(c.redeemed_at).toLocaleDateString("en-ZA")}</p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </>
-      )}
+      {tab === "wallet" && <VoucherWallet initialClaims={member.claims} onUpdate={load} />}
       {tab === "events" && (
         <>
-          <h2>Your community calendar</h2>
+          <div className="portal-section-heading">
+            <h2>Your community calendar</h2>
+            <p>Your upcoming connections, gatherings and moments together.</p>
+          </div>
           {member.registrations.length ? (
             <div className="cards-grid">
               {member.registrations.map((r: Item) => {
@@ -1542,6 +2024,381 @@ function Member() {
         </div>
       )}
     </div>
+  );
+}
+function VoucherWallet({
+  initialClaims,
+  onUpdate,
+}: {
+  initialClaims: Item[];
+  onUpdate: () => void;
+}) {
+  const { search } = useSite();
+  const [claims, setClaims] = useState<Item[]>(initialClaims);
+  const [selectedId, setSelectedId] = useState<string | null>(search.get("claim"));
+  const [filter, setFilter] = useState("available");
+  const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState("");
+  const [confirmed, setConfirmed] = useState(false);
+  const [clock, setClock] = useState({ server: 0, received: 0 });
+  const [tick, setTick] = useState(Date.now());
+  const requestEpoch = useRef(0);
+  const mutating = useRef(false);
+  const selected = claims.find((c) => c.id === selectedId);
+  const checkStatus = async () => {
+    if (mutating.current) return;
+    const epoch = ++requestEpoch.current;
+    setChecking(true);
+    try {
+      const result = await api("/wallet");
+      if (epoch !== requestEpoch.current) return;
+      setClaims(result.claims);
+      setClock({ server: Date.parse(result.serverTime), received: Date.now() });
+      setTick(Date.now());
+      setError("");
+    } catch (e: any) {
+      if (epoch === requestEpoch.current) {
+        setError(e.message);
+        setClock({ server: 0, received: 0 });
+      }
+    } finally {
+      if (epoch === requestEpoch.current) setChecking(false);
+    }
+  };
+  useEffect(() => {
+    void checkStatus();
+    return () => {
+      requestEpoch.current++;
+    };
+  }, []);
+  useEffect(() => {
+    if (!selectedId) return;
+    setConfirmed(false);
+    void checkStatus();
+    const timer = setInterval(() => void checkStatus(), 30000);
+    const ticker = setInterval(() => setTick(Date.now()), 1000);
+    return () => {
+      clearInterval(timer);
+      clearInterval(ticker);
+    };
+  }, [selectedId]);
+  const checked = !!clock.received && tick - clock.received < 45000;
+  const serverNow = clock.server + tick - clock.received;
+  const freshReceipt =
+    checked &&
+    selected?.redeemed_at &&
+    serverNow - Date.parse(selected.redeemed_at) >= 0 &&
+    serverNow - Date.parse(selected.redeemed_at) < 120000;
+  const stamp = (date: string) =>
+    new Date(date).toLocaleString("en-ZA", {
+      timeZone: "Africa/Johannesburg",
+      dateStyle: "medium",
+      timeStyle: "medium",
+    });
+  const redeem = async () => {
+    if (busy || !selected || !confirmed) return;
+    mutating.current = true;
+    requestEpoch.current++;
+    setChecking(false);
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api("/redeem", { id: selected.id, confirm: true });
+      setClaims((rows) => rows.map((c) => (c.id === result.claim.id ? result.claim : c)));
+      setClock({ server: Date.parse(result.serverTime), received: Date.now() });
+      setTick(Date.now());
+      setFilter("redeemed");
+      setConfirmed(false);
+      onUpdate();
+      toast.success("Voucher redeemed. Show this receipt to staff.");
+    } catch (e: any) {
+      mutating.current = false;
+      await checkStatus();
+      setError(e.message);
+    } finally {
+      mutating.current = false;
+      setBusy(false);
+    }
+  };
+  const visible = claims.filter(
+    (c) =>
+      filter === "all" ||
+      (filter === "redeemed" ? c.status === "redeemed" : c.status === "available"),
+  );
+  return (
+    <section className="wallet-section">
+      <div className="portal-section-heading">
+        <div>
+          <h2>Your voucher wallet</h2>
+          <p>Claim now. Redeem when you are with staff.</p>
+        </div>
+        <Button href="/vouchers" className="outline">
+          Find vouchers <Plus size={16} />
+        </Button>
+      </div>
+      <div className="wallet-guide">
+        <Ticket size={23} />
+        <p>
+          <strong>Ready to use a voucher?</strong> Open it below and show staff. Only confirm
+          redemption when they are ready to accept it.
+        </p>
+      </div>
+      <div className="filters wallet-filters" aria-label="Filter your vouchers">
+        {[
+          ["available", "Claimed"],
+          ["redeemed", "Redeemed"],
+          ["all", "All history"],
+        ].map(([value, label]) => (
+          <button
+            key={value}
+            aria-pressed={filter === value}
+            className={filter === value ? "selected" : ""}
+            onClick={() => setFilter(value)}
+          >
+            {label}{" "}
+            <span>
+              {
+                claims.filter(
+                  (c) =>
+                    value === "all" ||
+                    c.status === (value === "available" ? "available" : "redeemed"),
+                ).length
+              }
+            </span>
+          </button>
+        ))}
+      </div>
+      {error && !selectedId && (
+        <div className="notice" role="alert">
+          {error}
+          <button className="text-link" onClick={checkStatus}>
+            Try again
+          </button>
+        </div>
+      )}
+      {!visible.length ? (
+        <Empty
+          title={
+            filter === "redeemed"
+              ? "Your redeemed vouchers will appear here"
+              : "A little local love is waiting"
+          }
+          description={
+            filter === "redeemed"
+              ? "Every redemption is saved in your history."
+              : "Explore local offers and claim one to add it to your wallet."
+          }
+        >
+          <Button href="/vouchers">
+            Browse vouchers <ArrowRight size={16} />
+          </Button>
+        </Empty>
+      ) : (
+        <div className="wallet-grid">
+          {visible.map((c) => {
+            const voucher = c.receipt || c.voucher || {};
+            return (
+              <button
+                key={c.id}
+                className="wallet-card"
+                onClick={() => setSelectedId(c.id)}
+                aria-label={"Open voucher: " + (voucher.title || "Archived offer")}
+              >
+                <div className="wallet-card-top">
+                  <Ticket size={23} />
+                  <Badge tone={c.status === "redeemed" ? "" : c.redeemable ? "green" : "amber"}>
+                    {c.status === "redeemed"
+                      ? "Redeemed"
+                      : c.redeemable
+                        ? "Claimed · ready to use"
+                        : "Unavailable"}
+                  </Badge>
+                </div>
+                <span className="small-label">{voucher.business || "SLKD community"}</span>
+                <h3>{voucher.title || "Archived offer"}</h3>
+                <strong className="wallet-benefit">{voucher.benefit}</strong>
+                <p>
+                  {c.status === "redeemed"
+                    ? "Used " + stamp(c.redeemed_at)
+                    : c.redeemable
+                      ? c.voucher?.expires
+                        ? "Valid until " + dateLabel(c.voucher.expires)
+                        : "No fixed expiry"
+                      : c.invalidReason}
+                </p>
+                <div className="wallet-card-foot">
+                  <span>{c.status === "redeemed" ? "View receipt" : "Open voucher"}</span>
+                  <ArrowUpRight size={18} />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <Dialog
+        open={!!selectedId}
+        onOpenChange={(open) => {
+          if (!open && !busy) setSelectedId(null);
+        }}
+      >
+        <DialogContent
+          className="slk-dialog voucher-detail"
+          onInteractOutside={(event) => {
+            if (busy) event.preventDefault();
+          }}
+          onEscapeKeyDown={(event) => {
+            if (busy) event.preventDefault();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>
+              {selected?.status === "redeemed"
+                ? "Your redemption receipt"
+                : "Ready for a little local love?"}
+            </DialogTitle>
+            <DialogDescription>
+              {selected?.status === "redeemed"
+                ? "Keep this record and show it to staff."
+                : "Show this screen before you redeem. Each voucher can be used once."}
+            </DialogDescription>
+          </DialogHeader>
+          {!selected ? (
+            <p role="status">
+              {checking ? "Opening your voucher…" : "This voucher is not in your wallet."}
+            </p>
+          ) : (
+            <>
+              <div
+                className={
+                  "voucher-proof " +
+                  (selected.status === "redeemed"
+                    ? freshReceipt
+                      ? "just-redeemed"
+                      : "previously-redeemed"
+                    : selected.redeemable && checked
+                      ? "ready"
+                      : "unavailable")
+                }
+                role="status"
+                aria-live="polite"
+              >
+                <span className="proof-icon">
+                  {selected.status === "redeemed" ? <Check size={32} /> : <ShieldCheck size={32} />}
+                </span>
+                <strong>
+                  {selected.status === "redeemed"
+                    ? freshReceipt
+                      ? "Redeemed just now"
+                      : "Already redeemed"
+                    : !checked
+                      ? "Status not confirmed"
+                      : selected.redeemable
+                        ? "Valid & ready to redeem"
+                        : "Cannot be redeemed"}
+                </strong>
+                <span>
+                  {selected.status === "redeemed"
+                    ? freshReceipt
+                      ? "Staff: this voucher was valid and has now been used."
+                      : "This is a past receipt. This voucher cannot be used again."
+                    : !checked
+                      ? "Refresh the status before showing staff."
+                      : selected.redeemable
+                        ? "Staff: review the offer, then ask the member to confirm below."
+                        : selected.invalidReason}
+                </span>
+              </div>
+              <div className="voucher-summary">
+                <span className="small-label">
+                  {selected.receipt?.business || selected.voucher?.business}
+                </span>
+                <h3>{selected.receipt?.title || selected.voucher?.title || "Archived offer"}</h3>
+                <strong>{selected.receipt?.benefit || selected.voucher?.benefit}</strong>
+                {(selected.receipt?.demo || selected.voucher?.demo) && (
+                  <Badge tone="amber">Demo offer</Badge>
+                )}
+              </div>
+              <dl className="receipt-details">
+                <div>
+                  <dt>Voucher code</dt>
+                  <dd>
+                    <code>{selected.code}</code>
+                  </dd>
+                </div>
+                {selected.receipt?.memberName && (
+                  <div>
+                    <dt>Member</dt>
+                    <dd>{selected.receipt.memberName}</dd>
+                  </div>
+                )}
+                <div>
+                  <dt>Claimed</dt>
+                  <dd>{stamp(selected.created_at)} SAST</dd>
+                </div>
+                {selected.redeemed_at ? (
+                  <div>
+                    <dt>Redeemed</dt>
+                    <dd>{stamp(selected.redeemed_at)} SAST</dd>
+                  </div>
+                ) : (
+                  <div>
+                    <dt>Offer expires</dt>
+                    <dd>
+                      {selected.voucher?.expires
+                        ? dateLabel(selected.voucher.expires)
+                        : "No fixed expiry"}
+                    </dd>
+                  </div>
+                )}
+              </dl>
+              {selected.status === "available" && (
+                <div className="voucher-terms">
+                  <strong>Offer terms</strong>
+                  <p>
+                    {selected.voucher?.terms ||
+                      "One use per member, subject to the participating business accepting the offer."}
+                  </p>
+                </div>
+              )}
+              {error && (
+                <p className="auth-error" role="alert">
+                  {error}
+                </p>
+              )}
+              <div className="proof-refresh">
+                <span>
+                  <span className={checked ? "live-dot" : "offline-dot"} />
+                  {checked ? "Status checked with SLKD" : "Connection needs checking"}
+                </span>
+                <button className="text-link" disabled={checking || busy} onClick={checkStatus}>
+                  <RefreshCw size={15} />
+                  {checking ? "Checking…" : "Refresh status"}
+                </button>
+              </div>
+              {selected.status === "available" && selected.redeemable && (
+                <div className="redeem-confirmation">
+                  <label className="check-label">
+                    <input
+                      type="checkbox"
+                      checked={confirmed}
+                      disabled={busy}
+                      onChange={(e) => setConfirmed(e.target.checked)}
+                    />
+                    <span>I am with staff and ready to use this voucher now.</span>
+                  </label>
+                  <Button disabled={!confirmed || !checked || busy || checking} onClick={redeem}>
+                    {busy ? "Redeeming…" : "Redeem voucher now"}
+                    <Check size={18} />
+                  </Button>
+                  <small>This uses your voucher once. It cannot be undone.</small>
+                </div>
+              )}
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </section>
   );
 }
 function BusinessForm({ business, onSave }: any) {
@@ -1648,9 +2505,13 @@ function Admin() {
   const [query, setQuery] = useState("");
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
-  const alias:Record<string,string>={contact:"settings",breakfast:"events",shop:"overview"};
+  const alias: Record<string, string> = {
+    contact: "settings",
+    breakfast: "events",
+    shop: "overview",
+  };
   const rawTab = search.get("tab") || path.split("/")[2] || "overview";
-  const tab=alias[rawTab]||rawTab;
+  const tab = alias[rawTab] || rawTab;
   const load = () =>
     api("/admin")
       .then(setAdmin)
@@ -1659,7 +2520,13 @@ function Admin() {
     setAdmin(null);
     if (session.user?.role === "admin") load();
   }, [session.user?.id, session.user?.role]);
-  if (!sessionLoaded) return <><Header /><SessionLoading /></>;
+  if (!sessionLoaded)
+    return (
+      <>
+        <Header />
+        <SessionLoading />
+      </>
+    );
   if (!session.user)
     return (
       <>
@@ -1978,7 +2845,27 @@ function Admin() {
                         onChange={(e) => setQuery(e.target.value)}
                       />
                     </div>
-                    {tab === "events" && <Button className="outline" onClick={() => exportCSV(admin.registrations.map((r:Item)=>({event:admin.entities.find((e:Item)=>e.id===r.event_id)?.title||r.event_id,name:admin.users.find((u:Item)=>u.id===r.user_id)?.name,email:admin.users.find((u:Item)=>u.id===r.user_id)?.email,registered:r.created_at})),"event-registrations")}><Download size={16}/>Attendees</Button>}
+                    {tab === "events" && (
+                      <Button
+                        className="outline"
+                        onClick={() =>
+                          exportCSV(
+                            admin.registrations.map((r: Item) => ({
+                              event:
+                                admin.entities.find((e: Item) => e.id === r.event_id)?.title ||
+                                r.event_id,
+                              name: admin.users.find((u: Item) => u.id === r.user_id)?.name,
+                              email: admin.users.find((u: Item) => u.id === r.user_id)?.email,
+                              registered: r.created_at,
+                            })),
+                            "event-registrations",
+                          )
+                        }
+                      >
+                        <Download size={16} />
+                        Attendees
+                      </Button>
+                    )}
                     <Button
                       className="outline"
                       onClick={() =>
