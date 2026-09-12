@@ -935,7 +935,7 @@ footer {
 }
 /* Homepage: a stronger red accent and a welcoming community story. */
 .home-title-accent {
-  color: #ff98a2;
+  color: var(--red);
 }
 .story-band.local-roots {
   max-width: 1480px;
@@ -1127,7 +1127,7 @@ footer {
 }
 .editorial-theme .button.outline:hover,
 .slk-dialog .button.outline:hover {
-  background: #fceef0;
+  background: var(--soft);
   border-color: var(--red);
 }
 .editorial-theme .button.white,
@@ -1135,13 +1135,13 @@ footer {
 .editorial-theme .member-feature .button,
 .editorial-theme .membership-banner .button {
   background: white;
-  color: #bc2033;
+  color: var(--red);
 }
 .editorial-theme .button.white:hover,
 .editorial-theme .editorial-hero-actions .button:hover,
 .editorial-theme .member-feature .button:hover,
 .editorial-theme .membership-banner .button:hover {
-  background: #fff0f2;
+  background: var(--soft);
 }
 .editorial-theme .eyebrow,
 .action-top svg,
@@ -1158,17 +1158,17 @@ footer {
 }
 .editorial-theme .member-feature .eyebrow,
 .editorial-theme .membership-banner .eyebrow {
-  color: #ffabb4;
+  color: var(--red);
 }
 .editorial-theme .editorial-hero .eyebrow > span {
-  background: #ff98a2;
+  background: var(--red);
 }
 .involved-icon,
 .icon-square,
 .admin-user > span,
 .request-icon {
-  color: #bc2033;
-  background: #fceef0;
+  color: var(--red);
+  background: var(--soft);
 }
 .join-benefit > span,
 .giving-options > div > span {
@@ -1179,8 +1179,8 @@ footer {
   background: var(--red);
 }
 .involvement-nav a.selected {
-  color: #bc2033;
-  background: #fceef0;
+  color: var(--red);
+  background: var(--soft);
   box-shadow: none;
 }
 .filters button.selected,
@@ -1192,13 +1192,13 @@ footer {
   border-color: var(--red);
 }
 .join-steps > div > span {
-  color: #bc2033;
-  background: #fceef0;
-  border-color: #f4d9de;
+  color: var(--red);
+  background: var(--soft);
+  border-color: var(--line);
 }
 .welcome-price .plan-label .badge {
-  color: #bc2033;
-  background: #fceef0;
+  color: var(--red);
+  background: var(--soft);
 }
 /* Member navigation needs complete button sizing at every breakpoint. */
 .member-wrap {
@@ -1252,7 +1252,7 @@ footer {
 }
 .member-wrap .portal-tabs a:hover {
   color: var(--red);
-  background: #fceef0;
+  background: var(--soft);
 }
 .member-wrap .portal-tabs a.selected {
   background: var(--red);
@@ -1348,8 +1348,8 @@ footer {
 .involved-dropdown a:hover,
 .involved-dropdown a:focus-visible,
 .involved-dropdown a[aria-current="page"] {
-  background: #fceef0;
-  color: #bc2033;
+  background: var(--soft);
+  color: var(--red);
 }
 .involved-dropdown a > svg {
   flex-shrink: 0;
@@ -1381,8 +1381,8 @@ footer {
   }
   .header .nav > a:hover,
   .header .nav > a.active {
-    background: #fceef0;
-    color: #bc2033;
+    background: var(--soft);
+    color: var(--red);
   }
   .involved-menu {
     width: 100%;
@@ -1399,8 +1399,8 @@ footer {
     line-height: 1.4;
   }
   .involved-trigger[aria-expanded="true"] {
-    background: #fceef0;
-    color: #bc2033;
+    background: var(--soft);
+    color: var(--red);
   }
   .involved-menu .involved-dropdown {
     position: static;
@@ -1409,9 +1409,9 @@ footer {
     margin: 6px 0 10px;
     padding: 5px;
     border: 0;
-    border-left: 2px solid #eab3bc;
+    border-left: 2px solid var(--line);
     border-radius: 0 12px 12px 0;
-    background: #faf6f7;
+    background: var(--soft);
     box-shadow: none;
   }
   .involved-dropdown a {
@@ -1475,8 +1475,8 @@ footer {
   justify-self: start;
 }
 .event-bank {
-  background: #f8f1f2;
-  border: 1px solid #efdadd;
+  background: var(--soft);
+  border: 1px solid var(--line);
   border-radius: 18px;
   padding: 24px;
 }
@@ -1518,7 +1518,7 @@ footer {
   font-variant-numeric: tabular-nums;
 }
 .event-bank p {
-  border-top: 1px solid #e7d8db;
+  border-top: 1px solid var(--line);
   padding-top: 18px;
   margin: 19px 0 0;
   font-size: 14px;
@@ -1588,7 +1588,7 @@ footer {
 }
 .voucher-countdown {
   font-size: 14px;
-  color: #b81f32;
+  color: var(--red);
   font-variant-numeric: tabular-nums;
 }
 .wallet-card .voucher-countdown {
@@ -1598,9 +1598,9 @@ footer {
 }
 .voucher-deadline {
   padding: 21px;
-  border: 1px solid #f0d4d9;
+  border: 1px solid var(--line);
   border-radius: 16px;
-  background: #fff4f5;
+  background: var(--soft);
 }
 .voucher-deadline p {
   font-size: 14px;
@@ -1705,7 +1705,7 @@ footer {
   padding: clamp(30px, 4.5vw, 60px);
   border: 1px solid #ffffff12;
   border-radius: 28px;
-  background: radial-gradient(ellipse at 100% 100%, #74293666, transparent 65%), #202426;
+  background: #202426;
   color: white;
   box-shadow: 0 14px 38px #2024260b;
 }
@@ -1713,14 +1713,14 @@ footer {
   min-width: 0;
 }
 .editorial-theme .member-discovery .eyebrow {
-  color: #ffadb7;
+  color: var(--red);
   font-size: 12px;
   line-height: 1.6;
   letter-spacing: 0.13em;
   margin-bottom: 24px;
 }
 .member-discovery .eyebrow > span {
-  background: #f36f82;
+  background: var(--red);
 }
 .editorial-theme .member-discovery h2 {
   color: #fff;
@@ -1732,7 +1732,7 @@ footer {
   font-weight: 500;
 }
 .member-discovery h2 > span {
-  color: #ff9ca9;
+  color: var(--red);
 }
 .editorial-theme .member-discovery .discovery-copy > p {
   color: #d8dce0;
@@ -1754,7 +1754,7 @@ footer {
   min-height: 52px;
 }
 .editorial-theme .member-discovery .discovery-actions .button:hover {
-  background: #bb1c2d;
+  background: var(--red-dark);
 }
 .discovery-link {
   display: inline-flex;
@@ -1785,7 +1785,7 @@ footer {
   line-height: 1.5;
 }
 .discovery-steps svg {
-  color: #f998a5;
+  color: var(--red);
   flex-shrink: 0;
 }
 .discovery-wallet {
@@ -1808,14 +1808,14 @@ footer {
   width: 49px;
   height: 49px;
   border-radius: 15px;
-  background: #fceef0;
+  background: var(--soft);
   color: var(--red);
   display: grid;
   place-items: center;
   flex-shrink: 0;
 }
 .discovery-wallet-label {
-  color: #a92c3c;
+  color: var(--red);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.1em;
@@ -1861,7 +1861,7 @@ footer {
   min-height: 49px;
   padding-top: 15px;
   border-top: 1px solid var(--line);
-  color: #b72033;
+  color: var(--red);
   font-size: 15px;
   font-weight: 600;
 }
@@ -1999,15 +1999,16 @@ footer {
     margin-top: 12px;
   }
 }
-/* Let the supplied gathering photograph remain visible beside the hero copy. */
+/* Keep the homepage copy aligned with the left edge at every screen size. */
 @media (min-width: 1001px) {
   .home-hero-wrap .editorial-hero-content {
-    margin-left: 36%;
+    margin-left: 0;
+    text-align: left;
     max-width: 760px;
   }
   .home-hero-wrap .editorial-hero-shade {
     background:
-      linear-gradient(90deg, #10191f26 0%, #10191f8f 40%, #10191fc9 100%),
+      linear-gradient(90deg, #10191fed 0%, #10191fb8 48%, #10191f40 100%),
       linear-gradient(0deg, #10191f55, transparent 80%);
   }
   .home-hero-wrap .editorial-hero h1 {

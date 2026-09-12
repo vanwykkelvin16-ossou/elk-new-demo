@@ -649,14 +649,14 @@ em {
   font-size: 40px;
 }
 .membership-banner .eyebrow {
-  color: #ffd9de;
+  color: #fff;
   font-size: 10px;
 }
 .membership-banner .eyebrow > span {
   background: white;
 }
 .membership-banner p {
-  color: #ffe0e4;
+  color: #fff;
   font-size: 14px;
   margin: 0;
 }
@@ -673,7 +673,7 @@ em {
     sans-serif;
   letter-spacing: 0;
   margin-left: 6px;
-  color: #ffe0e4;
+  color: #fff;
 }
 .footer-top {
   padding: 58px 5.5%;
@@ -1325,7 +1325,7 @@ em {
   max-width: 500px;
 }
 .member-feature > svg {
-  color: #d1838e;
+  color: var(--red);
   transform: rotate(-20deg);
   flex-shrink: 0;
   margin-right: 40px;
@@ -1557,7 +1557,7 @@ em {
   place-items: center;
   border-radius: 50%;
   background: #f6e7ea;
-  color: #b35664;
+  color: var(--red);
   font-size: 14px;
   font-weight: 650;
 }
@@ -2967,7 +2967,7 @@ html {
 }
 .involvement-nav a.selected {
   background: #fbecee;
-  color: #b82639;
+  color: var(--red);
   font-weight: 600;
 }
 
@@ -3247,7 +3247,7 @@ html {
   white-space: normal;
 }
 .plan-label > svg {
-  color: #ff8190;
+  color: var(--red);
   flex-shrink: 0;
 }
 .welcome-price h3 {
@@ -3422,7 +3422,7 @@ html {
   font-weight: 600;
 }
 .pledge-picker button.selected {
-  color: #ba2035;
+  color: var(--red);
   background: #fff0f2;
   border-color: #d8293c;
 }
