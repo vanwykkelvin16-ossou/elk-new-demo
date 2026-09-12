@@ -364,7 +364,8 @@ footer {
   min-height: 48px;
 }
 .about-grid {
-  gap: 7%;
+  column-gap: 7%;
+  row-gap: 40px;
   align-items: center;
 }
 .about-photo-pair {
@@ -1947,9 +1948,9 @@ footer {
 /* Keep the saved-voucher message and its next action comfortably separated. */
 .slk-dialog .claim-success {
   display: grid;
-  justify-items: center;
+  justify-items: start;
   gap: 17px;
-  text-align: center;
+  text-align: left;
   margin-top: 10px;
   padding: 30px 26px 26px;
   background: #f7f8f9;
@@ -1960,10 +1961,10 @@ footer {
   width: 56px;
   height: 56px;
   margin: 0 0 3px;
-}
-.slk-dialog .claim-success.is-redeemed .claim-success-icon {
-  background: #e6eaec;
-  color: #4b5961;
+  background: #16804a;
+  color: #fff;
+  border: 6px solid #e5f4eb;
+  box-sizing: content-box;
 }
 .slk-dialog .claim-success h3 {
   margin: 0;
@@ -2013,5 +2014,30 @@ footer {
   }
   .home-hero-wrap .editorial-hero h1 {
     font-size: clamp(48px, 4.6vw, 72px);
+  }
+}
+
+/* Fixed vertical gaps keep the stacked story content inside its layout on mobile. */
+@media (max-width: 700px) {
+  .about-grid {
+    row-gap: 32px;
+    margin-bottom: 48px;
+  }
+  .about-grid > div:last-child {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .about-grid > div:last-child > .button {
+    margin-top: 8px;
+    max-width: 100%;
+  }
+  .about-grid + .action-grid {
+    gap: 20px;
+  }
+}
+@media (hover: none) {
+  .about-grid + .action-grid .action-card:hover {
+    transform: none;
   }
 }
