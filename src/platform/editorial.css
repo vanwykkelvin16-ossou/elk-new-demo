@@ -1696,3 +1696,321 @@ footer {
     font-size: 17px;
   }
 }
+/* Member welcome: high contrast copy and a useful wallet summary. */
+.editorial-theme .member-discovery {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.8fr);
+  gap: clamp(30px, 5vw, 70px);
+  align-items: center;
+  padding: clamp(30px, 4.5vw, 60px);
+  border: 1px solid #ffffff12;
+  border-radius: 28px;
+  background: radial-gradient(ellipse at 100% 100%, #74293666, transparent 65%), #202426;
+  color: white;
+  box-shadow: 0 14px 38px #2024260b;
+}
+.discovery-copy {
+  min-width: 0;
+}
+.editorial-theme .member-discovery .eyebrow {
+  color: #ffadb7;
+  font-size: 12px;
+  line-height: 1.6;
+  letter-spacing: 0.13em;
+  margin-bottom: 24px;
+}
+.member-discovery .eyebrow > span {
+  background: #f36f82;
+}
+.editorial-theme .member-discovery h2 {
+  color: #fff;
+  font-size: clamp(34px, 3.6vw, 52px);
+  line-height: 1.1;
+  letter-spacing: -0.035em;
+  margin: 0 0 23px;
+  max-width: 650px;
+  font-weight: 500;
+}
+.member-discovery h2 > span {
+  color: #ff9ca9;
+}
+.editorial-theme .member-discovery .discovery-copy > p {
+  color: #d8dce0;
+  max-width: 570px;
+  font-size: 16px;
+  line-height: 1.8;
+  margin-bottom: 28px;
+}
+.discovery-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px 25px;
+}
+.editorial-theme .member-discovery .discovery-actions .button {
+  background: var(--red);
+  color: #fff;
+  box-shadow: 0 5px 16px #00000015;
+  min-height: 52px;
+}
+.editorial-theme .member-discovery .discovery-actions .button:hover {
+  background: #bb1c2d;
+}
+.discovery-link {
+  display: inline-flex;
+  gap: 9px;
+  align-items: center;
+  min-height: 48px;
+  font-size: 14px;
+  color: #f3f4f5;
+}
+.discovery-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 5px;
+}
+.discovery-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 13px 21px;
+  border-top: 1px solid #ffffff21;
+  padding-top: 24px;
+  margin-top: 31px;
+}
+.discovery-steps > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #d5dade;
+  line-height: 1.5;
+}
+.discovery-steps svg {
+  color: #f998a5;
+  flex-shrink: 0;
+}
+.discovery-wallet {
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid #ffffff70;
+  border-radius: 22px;
+  padding: 29px;
+  box-shadow: 0 18px 36px #00000018;
+  min-width: 0;
+}
+.discovery-wallet-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 13px;
+  margin-bottom: 23px;
+}
+.discovery-wallet-icon {
+  width: 49px;
+  height: 49px;
+  border-radius: 15px;
+  background: #fceef0;
+  color: var(--red);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.discovery-wallet-label {
+  color: #a92c3c;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-align: right;
+}
+.editorial-theme .member-discovery .discovery-wallet h3 {
+  color: var(--ink);
+  font-size: 24px;
+  margin: 0 0 20px;
+  line-height: 1.25;
+}
+.discovery-wallet-total {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.discovery-wallet-total > strong {
+  font:
+    500 clamp(48px, 4vw, 62px)/1 Outfit,
+    "DM Sans",
+    sans-serif;
+  color: var(--ink);
+  letter-spacing: -0.05em;
+}
+.discovery-wallet-total > span {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.editorial-theme .member-discovery .discovery-wallet > p {
+  font-size: 14px;
+  line-height: 1.75;
+  color: #5e676d;
+  margin-bottom: 20px;
+}
+.discovery-wallet-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 49px;
+  padding-top: 15px;
+  border-top: 1px solid var(--line);
+  color: #b72033;
+  font-size: 15px;
+  font-weight: 600;
+}
+.discovery-wallet-link > svg {
+  flex-shrink: 0;
+}
+.discovery-wallet-link:hover {
+  color: var(--ink);
+}
+.discovery-wallet-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 15px;
+  border-top: 1px dashed var(--line);
+  color: #70777c;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.discovery-wallet-note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+@media (max-width: 1000px) {
+  .editorial-theme .member-discovery {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 30px;
+  }
+  .discovery-wallet {
+    max-width: 600px;
+    width: 100%;
+  }
+  .discovery-wallet-total > strong {
+    font-size: 56px;
+  }
+}
+@media (max-width: 700px) {
+  .editorial-theme .member-discovery {
+    padding: 29px 23px;
+    border-radius: 22px;
+    gap: 28px;
+  }
+  .editorial-theme .member-discovery h2 {
+    font-size: clamp(32px, 8.9vw, 42px);
+  }
+  .editorial-theme .member-discovery .eyebrow {
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    margin-bottom: 21px;
+  }
+  .editorial-theme .member-discovery .discovery-copy > p {
+    font-size: 15px;
+  }
+  .discovery-actions {
+    align-items: stretch;
+    gap: 10px;
+  }
+  .discovery-actions .button,
+  .discovery-link {
+    width: 100%;
+    justify-content: center;
+  }
+  .discovery-steps {
+    gap: 12px 16px;
+    padding-top: 21px;
+    margin-top: 23px;
+  }
+  .discovery-steps > span {
+    font-size: 12px;
+  }
+  .discovery-wallet {
+    padding: 24px 21px;
+    border-radius: 18px;
+  }
+  .discovery-wallet-label {
+    font-size: 12px;
+  }
+  .editorial-theme .member-discovery .discovery-wallet h3 {
+    font-size: 23px;
+  }
+}
+/* Keep the saved-voucher message and its next action comfortably separated. */
+.slk-dialog .claim-success {
+  display: grid;
+  justify-items: center;
+  gap: 17px;
+  text-align: center;
+  margin-top: 10px;
+  padding: 30px 26px 26px;
+  background: #f7f8f9;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+}
+.slk-dialog .claim-success-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 0 3px;
+}
+.slk-dialog .claim-success.is-redeemed .claim-success-icon {
+  background: #e6eaec;
+  color: #4b5961;
+}
+.slk-dialog .claim-success h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 27px;
+  line-height: 1.25;
+}
+.slk-dialog .claim-success > p {
+  margin: 0;
+  max-width: 390px;
+  color: #626c72;
+  font-size: 16px;
+  line-height: 1.75;
+}
+.slk-dialog .claim-success .button {
+  margin-top: 13px;
+  width: 100%;
+  min-height: 52px;
+}
+@media (max-width: 700px) {
+  .slk-dialog .claim-success {
+    padding: 26px 20px 23px;
+    gap: 16px;
+    border-radius: 18px;
+  }
+  .slk-dialog .claim-success h3 {
+    font-size: 25px;
+  }
+  .slk-dialog .claim-success > p {
+    font-size: 15px;
+  }
+  .slk-dialog .claim-success .button {
+    margin-top: 12px;
+  }
+}
+/* Let the supplied gathering photograph remain visible beside the hero copy. */
+@media (min-width: 1001px) {
+  .home-hero-wrap .editorial-hero-content {
+    margin-left: 36%;
+    max-width: 760px;
+  }
+  .home-hero-wrap .editorial-hero-shade {
+    background:
+      linear-gradient(90deg, #10191f26 0%, #10191f8f 40%, #10191fc9 100%),
+      linear-gradient(0deg, #10191f55, transparent 80%);
+  }
+  .home-hero-wrap .editorial-hero h1 {
+    font-size: clamp(48px, 4.6vw, 72px);
+  }
+}

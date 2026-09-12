@@ -19,7 +19,6 @@ import {
   Plus,
   LayoutDashboard,
   LogOut,
-  Settings,
   Mail,
   Phone,
   Download,
@@ -74,7 +73,6 @@ const adminNav = [
   ["requests", "Requests & giving", HandHeart],
   ["redemptions", "Redemptions", ShieldCheck],
   ["sponsors", "Sponsors", Heart],
-  ["settings", "Website settings", Settings],
   ["activity", "Activity log", Activity],
 ] as const;
 // Keep document state while navigating; modified clicks and external links stay native.
@@ -174,12 +172,14 @@ function EditorialHero({
   label?: string;
   compact?: boolean;
 }) {
+  const photoBase = photo === "home-hero" ? "/community/faith-gathering" : "/stock/" + photo;
+  const photoWidth = photo === "home-hero" ? 1440 : 2000;
   return (
     <section className={"editorial-hero " + (compact ? "compact" : "")}>
       <img
         className="editorial-hero-image"
-        src={"/stock/" + photo + ".webp"}
-        srcSet={`/stock/${photo}-mobile.webp 900w, /stock/${photo}.webp 2000w`}
+        src={photoBase + ".webp"}
+        srcSet={`${photoBase}-mobile.webp 900w, ${photoBase}.webp ${photoWidth}w`}
         sizes="(max-width: 700px) 100vw, 94vw"
         alt=""
         fetchPriority="high"
@@ -1201,8 +1201,8 @@ function About() {
         <div className="about-grid">
           <div className="about-photo-pair">
             <img
-              src="/stock/about-detail.webp"
-              alt="People collaborating around a shared idea"
+              src="/community/school-visit.webp"
+              alt="Community members outside Curamus School for Autism"
               loading="lazy"
             />
             <div className="about-photo-caption">
@@ -1386,7 +1386,12 @@ function Vouchers() {
                 </p>
               </div>
               {owned ? (
-                <div className="claim-success" role="status">
+                <div
+                  className={
+                    "claim-success " + (owned.status === "redeemed" ? "is-redeemed" : "is-claimed")
+                  }
+                  role="status"
+                >
                   <span className="claim-success-icon">
                     <Check size={24} />
                   </span>
@@ -1395,7 +1400,7 @@ function Vouchers() {
                   </h3>
                   <p>
                     {owned.status === "redeemed"
-                      ? "Your receipt is saved in your wallet."
+                      ? "This voucher has been used. Your receipt is saved in your wallet."
                       : "Your redemption timer has started. Open your wallet to see the deadline, then redeem with staff before time runs out."}
                   </p>
                   <Button href={"/member?tab=wallet&claim=" + owned.id}>
@@ -2428,24 +2433,109 @@ function Member() {
               icon={CalendarDays}
             />
           </div>
-          <div className="member-feature">
-            <div>
+          <section
+            className="member-feature member-discovery"
+            aria-labelledby="member-discovery-title"
+          >
+            <div className="discovery-copy">
               <Eyebrow>MAKE THE MOST OF YOUR MEMBERSHIP</Eyebrow>
-              <h2>
-                {user.active ? "Your next local discovery awaits." : "Your community is waiting."}
+              <h2 id="member-discovery-title">
+                {user.active ? (
+                  <>
+                    A little more local.
+                    <br />
+                    <span>A lot more to love.</span>
+                  </>
+                ) : (
+                  <>
+                    Your place is here.
+                    <br />
+                    <span>Make it yours.</span>
+                  </>
+                )}
               </h2>
               <p>
                 {user.active
-                  ? "Find a local offer and add it to your wallet."
-                  : "Activate your membership to unlock local vouchers and list your business."}
+                  ? "Discover offers from local businesses, save a favourite to your wallet and enjoy it with the people who make our town special."
+                  : "Unlock local vouchers, give your business a place in the community and make meaningful connections in Krugersdorp."}
               </p>
-              <Button href={user.active ? "/vouchers" : "/member?tab=membership"}>
-                {user.active ? "Explore vouchers" : "Activate my membership"}{" "}
-                <ArrowUpRight size={17} />
-              </Button>
+              <div className="discovery-actions">
+                <Button href={user.active ? "/vouchers" : "/member?tab=membership"}>
+                  {user.active ? "Explore local vouchers" : "Activate my membership"}
+                  <ArrowUpRight size={18} />
+                </Button>
+                {user.active && (
+                  <AppLink className="discovery-link" href="/member?tab=events">
+                    My community events <ArrowRight size={16} />
+                  </AppLink>
+                )}
+              </div>
+              <div className="discovery-steps" aria-label="How member vouchers work">
+                <span>
+                  <Search size={16} aria-hidden="true" />
+                  Discover locally
+                </span>
+                <span>
+                  <Ticket size={16} aria-hidden="true" />
+                  Claim your favourite
+                </span>
+                <span>
+                  <ShieldCheck size={16} aria-hidden="true" />
+                  Redeem with staff
+                </span>
+              </div>
             </div>
-            <Ticket size={100} strokeWidth={0.8} />
-          </div>
+            <div className="discovery-wallet">
+              <div className="discovery-wallet-top">
+                <span className="discovery-wallet-icon">
+                  <Ticket size={25} aria-hidden="true" />
+                </span>
+                <span className="discovery-wallet-label">
+                  {user.active ? "MEMBER BENEFITS" : "YOUR LOCAL CIRCLE"}
+                </span>
+              </div>
+              <h3>{user.active ? "Your voucher wallet" : "A membership that matters"}</h3>
+              {user.active ? (
+                <>
+                  <div className="discovery-wallet-total">
+                    <strong>
+                      {member.claims.filter((c: Item) => c.status === "available").length}
+                    </strong>
+                    <span>
+                      claimed vouchers
+                      <br />
+                      in your wallet
+                    </span>
+                  </div>
+                  <p>
+                    See your offers, check the time remaining and open your voucher when you're with
+                    staff.
+                  </p>
+                  <AppLink className="discovery-wallet-link" href="/member?tab=wallet">
+                    Open my wallet <ArrowUpRight size={21} />
+                  </AppLink>
+                </>
+              ) : (
+                <>
+                  <div className="discovery-wallet-total">
+                    <strong>{money(data.settings.membershipPrice)}</strong>
+                    <span>per year</span>
+                  </div>
+                  <p>
+                    Local offers. Business connections. A shared purpose. Your benefits start when
+                    your payment is verified.
+                  </p>
+                  <AppLink className="discovery-wallet-link" href="/member?tab=membership">
+                    View my membership <ArrowUpRight size={21} />
+                  </AppLink>
+                </>
+              )}
+              <div className="discovery-wallet-note">
+                <Clock size={15} aria-hidden="true" />
+                <span>Every claimed voucher has its own redemption deadline.</span>
+              </div>
+            </div>
+          </section>
           <div className="account-actions">
             <Button className="outline" href="/member?tab=business">
               Update my business <Building2 size={16} />
@@ -3090,7 +3180,8 @@ function Admin() {
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
   const alias: Record<string, string> = {
-    contact: "settings",
+    contact: "overview",
+    settings: "overview",
     breakfast: "events",
     shop: "overview",
   };
@@ -3782,51 +3873,6 @@ function Admin() {
                     {!admin.claims.length && <Empty title="No vouchers claimed yet" />}
                   </div>
                 </>
-              )}
-              {tab === "settings" && (
-                <div className="form-card">
-                  <h2>The details that make it yours</h2>
-                  <form
-                    className="form-grid two-column"
-                    onSubmit={async (e) => {
-                      e.preventDefault();
-                      await mutate(
-                        "/admin/settings",
-                        Object.fromEntries(new FormData(e.target)),
-                        "Website settings updated.",
-                      );
-                    }}
-                  >
-                    {[
-                      ["headline", "Home headline"],
-                      ["intro", "Home introduction"],
-                      ["phone", "Contact phone"],
-                      ["email", "Contact email"],
-                      ["membershipPrice", "Annual membership (ZAR)"],
-                      ["donationIntro", "Donation introduction"],
-                      ["bankName", "Bank name"],
-                      ["bankAccount", "Bank account"],
-                      ["bankReference", "Payment reference prefix"],
-                    ].map(([k, l]) => (
-                      <Field
-                        key={k}
-                        label={l}
-                        name={k}
-                        type={k === "membershipPrice" ? "number" : k === "email" ? "email" : "text"}
-                        min={k === "membershipPrice" ? 1 : undefined}
-                        defaultValue={admin.settings[k]}
-                        required={["headline", "intro", "membershipPrice", "phone"].includes(k)}
-                      />
-                    ))}
-                    <p className="form-note full-width">
-                      Only enter banking details after confirming them with the organisation. They
-                      will be shown to signed-in members for payment arrangements.
-                    </p>
-                    <Button type="submit">
-                      Save website settings <Check size={17} />
-                    </Button>
-                  </form>
-                </div>
               )}
               {tab === "activity" && (
                 <div className="admin-panel">
