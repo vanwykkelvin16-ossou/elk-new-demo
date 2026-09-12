@@ -1450,3 +1450,168 @@ footer {
 .involved-menu .involved-dropdown {
   white-space: normal;
 }
+.event-registration {
+  border-top: 1px solid var(--line);
+  padding-top: 25px;
+  display: grid;
+  gap: 20px;
+}
+.event-registration > h3,
+.event-registration > p {
+  margin: 0;
+}
+.event-registration h3,
+.event-bank h3 {
+  font-size: 23px;
+  line-height: 1.3;
+}
+.event-registration p,
+.event-registration .field > span,
+.event-registration .check-label {
+  font-size: 14px;
+  line-height: 1.7;
+}
+.event-registration > .badge {
+  justify-self: start;
+}
+.event-bank {
+  background: #f8f1f2;
+  border: 1px solid #efdadd;
+  border-radius: 18px;
+  padding: 24px;
+}
+.event-bank-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--red);
+  margin-bottom: 19px;
+}
+.event-bank-heading h3 {
+  margin: 0;
+  color: var(--ink);
+}
+.event-bank dl {
+  display: grid;
+  gap: 13px;
+  margin: 0;
+}
+.event-bank dl > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 20px;
+  font-size: 14px;
+}
+.event-bank dt {
+  color: var(--muted);
+}
+.event-bank dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.event-bank .bank-number {
+  font-size: 19px;
+  letter-spacing: 0.025em;
+  font-variant-numeric: tabular-nums;
+}
+.event-bank p {
+  border-top: 1px solid #e7d8db;
+  padding-top: 18px;
+  margin: 19px 0 0;
+  font-size: 14px;
+}
+.registration-contact {
+  display: grid;
+  gap: 7px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.registered-event {
+  min-width: 0;
+  display: grid;
+  gap: 15px;
+}
+.registered-event > .badge {
+  justify-self: start;
+}
+.event-attendees {
+  margin-top: 30px;
+}
+.event-attendees td {
+  vertical-align: top;
+}
+.event-attendees td > div {
+  margin-top: 7px;
+  font-size: 13px;
+}
+.event-attendees code {
+  white-space: nowrap;
+}
+@media (max-width: 700px) {
+  .event-registration .form-grid.two-column {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .event-bank {
+    padding: 20px 18px;
+  }
+  .event-bank dl > div {
+    flex-direction: column;
+    gap: 4px;
+  }
+  .event-bank dd {
+    text-align: left;
+  }
+  .event-registration .button {
+    width: 100%;
+  }
+  .event-registration {
+    gap: 18px;
+  }
+}
+.voucher-window,
+.voucher-countdown {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  line-height: 1.5;
+}
+.voucher-window svg,
+.voucher-countdown svg {
+  flex-shrink: 0;
+}
+.card-body .voucher-window {
+  font-size: 14px;
+  color: var(--red);
+}
+.voucher-countdown {
+  font-size: 14px;
+  color: #b81f32;
+  font-variant-numeric: tabular-nums;
+}
+.wallet-card .voucher-countdown {
+  border-top: 1px solid var(--line);
+  padding-top: 15px;
+  margin-top: 18px;
+}
+.voucher-deadline {
+  padding: 21px;
+  border: 1px solid #f0d4d9;
+  border-radius: 16px;
+  background: #fff4f5;
+}
+.voucher-deadline p {
+  font-size: 14px;
+  line-height: 1.7;
+  margin: 13px 0 0;
+}
+.voucher-deadline.expired {
+  background: #f1f3f4;
+  border-color: var(--line);
+}
+.voucher-deadline.expired .voucher-countdown,
+.voucher-countdown.expired {
+  color: #676e73;
+}

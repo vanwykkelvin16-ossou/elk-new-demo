@@ -51,6 +51,7 @@ export const claims = sqliteTable(
     createdAt: text("created_at").notNull(),
     redeemedAt: text("redeemed_at"),
     receipt: text("receipt"),
+    redeemBy: text("redeem_by"),
   },
   (t) => [
     uniqueIndex("claim_once").on(t.userId, t.voucherId),
@@ -64,6 +65,8 @@ export const registrations = sqliteTable(
     userId: text("user_id").notNull(),
     eventId: text("event_id").notNull(),
     createdAt: text("created_at").notNull(),
+    status: text("status").notNull().default("confirmed"),
+    details: text("details").notNull().default("{}"),
   },
   (t) => [uniqueIndex("registration_once").on(t.userId, t.eventId)],
 );

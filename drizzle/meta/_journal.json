@@ -22,6 +22,20 @@
       "when": 1789153668003,
       "tag": "0002_thankful_adam_warlock",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1789192320349,
+      "tag": "0003_illegal_jimmy_woo",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1789192575405,
+      "tag": "0004_sleepy_reaper",
+      "breakpoints": true
     }
   ]
 }

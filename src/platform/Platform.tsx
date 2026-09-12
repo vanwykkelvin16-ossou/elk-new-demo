@@ -29,6 +29,7 @@ import {
   ChevronRight,
   ChevronDown,
   RefreshCw,
+  Clock,
   Activity,
   FileText,
   ExternalLink,
@@ -52,7 +53,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Toaster, toast } from "sonner";
 import { api, money, dateLabel } from "./client";
-import { defaultSettings, initialEntities } from "./seed";
+import { defaultSettings, initialEntities, eventBanking } from "./seed";
 import "./platform.css";
 import "./editorial.css";
 type Item = Record<string, any>;
@@ -683,14 +684,6 @@ function Events() {
   const [filter, setFilter] = useState("All events");
   const items = data.entities.filter((i: Item) => i.kind === "events");
   const selected = items.find((i: Item) => i.id === search.get("event"));
-  const register = async () => {
-    try {
-      await api("/register", { id: selected.id });
-      toast.success(selected.date ? "You are registered." : "Your interest has been registered.");
-    } catch (e: any) {
-      toast.error(e.message);
-    }
-  };
   return (
     <div className="page-wrap">
       <PageTitle
@@ -744,27 +737,407 @@ function Events() {
                 </span>
               </div>
               <p>{selected.description}</p>
-              {selected.price > 0 && (
-                <p>
-                  Event contribution: {money(selected.price)}. Payment arrangements will be
-                  confirmed by the team.
-                </p>
-              )}
               {session.user ? (
-                <Button onClick={register}>
-                  {selected.date ? "Register for this event" : "Register my interest"}
-                  <ArrowUpRight size={16} />
-                </Button>
+                <EventRegistration
+                  key={selected.id + session.user.id}
+                  event={selected}
+                  user={session.user}
+                />
               ) : (
-                <Button href="/member">
-                  Sign in to register <ArrowUpRight size={16} />
-                </Button>
+                <div className="event-registration">
+                  <h3>Register your interest</h3>
+                  <p>
+                    Sign in to fill in your contact details, receive your payment reference and
+                    track confirmation of your spot.
+                  </p>
+                  <EventBankDetails amount={Number(selected.price) || 0} />
+                  <Button href="/member">
+                    Sign in to register <ArrowUpRight size={16} />
+                  </Button>
+                </div>
               )}
             </>
           )}
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+const registrationLabels: Record<string, string> = {
+  pending_payment: "Awaiting payment",
+  payment_review: "Payment being verified",
+  pending_confirmation: "Interest registered",
+  confirmed: "Spot confirmed",
+};
+function EventBankDetails({ amount, reference }: { amount: number; reference?: string }) {
+  return (
+    <section className="event-bank" aria-label="Event payment details">
+      <div className="event-bank-heading">
+        <Building2 size={21} />
+        <h3>Pay by EFT</h3>
+      </div>
+      <dl>
+        <div>
+          <dt>Bank</dt>
+          <dd>{eventBanking.bank}</dd>
+        </div>
+        <div>
+          <dt>Account type</dt>
+          <dd>{eventBanking.accountType}</dd>
+        </div>
+        <div>
+          <dt>Account number</dt>
+          <dd className="bank-number">{eventBanking.account}</dd>
+        </div>
+        {amount > 0 && (
+          <div>
+            <dt>Amount per person</dt>
+            <dd>{money(amount)}</dd>
+          </div>
+        )}
+        {reference && (
+          <div>
+            <dt>Payment reference</dt>
+            <dd>{reference}</dd>
+          </div>
+        )}
+      </dl>
+      <p>
+        {amount > 0
+          ? reference
+            ? "Use this exact reference for your EFT. Your spot is confirmed after the team verifies payment."
+            : "Submit your details below to receive your unique EFT reference. Payment will be verified before your spot is confirmed."
+          : "No payment is requested yet. The team will confirm the event arrangements and any contribution before you pay."}
+      </p>
+    </section>
+  );
+}
+function EventRegistration({ event, user }: { event: Item; user: Item }) {
+  const [registration, setRegistration] = useState<Item | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [paymentSent, setPaymentSent] = useState(false);
+  const load = async () => {
+    const result = await api("/registration?event=" + encodeURIComponent(event.id));
+    setRegistration(result.registration);
+  };
+  useEffect(() => {
+    let current = true;
+    api("/registration?event=" + encodeURIComponent(event.id))
+      .then((result) => {
+        if (current) setRegistration(result.registration);
+      })
+      .catch((e) => {
+        if (current) setError(e.message);
+      })
+      .finally(() => {
+        if (current) setLoading(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, [event.id, user.id]);
+  if (loading) return <p role="status">Checking your registration…</p>;
+  if (registration)
+    return (
+      <div className="event-registration">
+        <Badge tone={registration.status === "confirmed" ? "green" : "amber"}>
+          {registrationLabels[registration.status] || registration.status}
+        </Badge>
+        <h3>
+          {registration.status === "confirmed"
+            ? "Your spot is confirmed."
+            : "Thank you. Your details are saved."}
+        </h3>
+        <p>
+          {registration.status === "confirmed"
+            ? "The team has confirmed your attendance. Keep this registration in your member account."
+            : registration.status === "payment_review"
+              ? "Your EFT has been marked as sent. The team will check the payment before confirming your spot."
+              : "Your place is awaiting confirmation from the team."}
+        </p>
+        <div className="registration-contact">
+          <strong>{registration.details.name || user.name}</strong>
+          <span>{registration.details.email || user.email}</span>
+          <span>{registration.details.phone}</span>
+        </div>
+        {registration.status !== "confirmed" && (
+          <EventBankDetails
+            amount={registration.details.amount || 0}
+            reference={registration.details.reference}
+          />
+        )}
+        {registration.status === "pending_payment" && (
+          <form
+            className="form-grid"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (busy) return;
+              setBusy(true);
+              setError("");
+              try {
+                await api("/registration-payment", { id: registration.id, paymentSent });
+                await load();
+                toast.success("Payment sent for verification.");
+              } catch (e: any) {
+                setError(e.message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <label className="check-label">
+              <input
+                type="checkbox"
+                checked={paymentSent}
+                onChange={(e) => setPaymentSent(e.target.checked)}
+                required
+              />
+              <span>I have made the EFT using the reference above.</span>
+            </label>
+            <Button type="submit" disabled={busy || !paymentSent}>
+              {busy ? "Saving…" : "I've paid — notify the team"}
+              <Check size={17} />
+            </Button>
+          </form>
+        )}
+        {error && (
+          <p role="alert" className="auth-error">
+            {error}
+          </p>
+        )}
+        <Button href="/member?tab=events" className="outline">
+          View my registrations <ArrowRight size={17} />
+        </Button>
+      </div>
+    );
+  return (
+    <div className="event-registration">
+      <h3>Register your interest</h3>
+      <p>
+        Tell us who is coming. One registration reserves a request for one person; the team confirms
+        your spot.
+      </p>
+      <EventBankDetails amount={Number(event.price) || 0} />
+      <form
+        className="form-grid two-column"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (busy) return;
+          const values = Object.fromEntries(new FormData(e.currentTarget));
+          setBusy(true);
+          setError("");
+          try {
+            const r = await api("/register", {
+              ...values,
+              id: event.id,
+              consent: values.consent === "on",
+            });
+            setRegistration(r.registration);
+          } catch (e: any) {
+            setError(e.message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <Field
+          label="Full name"
+          name="name"
+          defaultValue={user.name}
+          autoComplete="name"
+          required
+          maxLength={120}
+        />
+        <Field
+          label="Email address"
+          name="email"
+          type="email"
+          defaultValue={user.email}
+          autoComplete="email"
+          required
+          maxLength={200}
+        />
+        <Field
+          label="Contact number"
+          name="phone"
+          type="tel"
+          defaultValue={user.phone}
+          autoComplete="tel"
+          required
+          minLength={7}
+          maxLength={40}
+        />
+        <Field
+          label="Business / organisation (optional)"
+          name="business"
+          autoComplete="organization"
+          maxLength={150}
+        />
+        <label className="check-label full-width">
+          <input type="checkbox" name="consent" required />
+          <span>
+            I agree that SO LOVE KRUGERSDORP may use these details to manage my event registration.{" "}
+            <AppLink href="/privacy" target="_blank" rel="noreferrer">
+              Privacy policy
+            </AppLink>
+            .
+          </span>
+        </label>
+        {error && (
+          <p className="auth-error full-width" role="alert">
+            {error}
+          </p>
+        )}
+        <Button type="submit" disabled={busy} className="full-width">
+          {busy ? "Saving your details…" : "Submit my registration"}
+          <ArrowUpRight size={17} />
+        </Button>
+      </form>
+    </div>
+  );
+}
+function EventAttendees({ admin, onUpdate }: { admin: Item; onUpdate: () => void }) {
+  const [selected, setSelected] = useState<Item | null>(null);
+  const [checked, setChecked] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  return (
+    <section className="admin-panel event-attendees">
+      <div className="panel-heading">
+        <h2>Event registrations</h2>
+      </div>
+      <p className="panel-padding">
+        Check each EFT in your bank account before confirming a paid spot.
+      </p>
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Attendee</th>
+              <th>Event</th>
+              <th>Payment</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {admin.registrations.map((r: Item) => (
+              <tr key={r.id}>
+                <td>
+                  <strong>
+                    {r.details.name || admin.users.find((u: Item) => u.id === r.user_id)?.name}
+                  </strong>
+                  <div>
+                    {r.details.email || admin.users.find((u: Item) => u.id === r.user_id)?.email}
+                  </div>
+                  <div>{r.details.phone}</div>
+                  {r.details.business && <small>{r.details.business}</small>}
+                </td>
+                <td>
+                  {admin.entities.find((e: Item) => e.id === r.event_id)?.title || "Archived event"}
+                </td>
+                <td>
+                  {r.details.amount > 0 ? money(r.details.amount) : "No payment requested"}
+                  <div>
+                    <code>{r.details.reference}</code>
+                  </div>
+                </td>
+                <td>
+                  <Badge tone={r.status === "confirmed" ? "green" : "amber"}>
+                    {registrationLabels[r.status] || r.status}
+                  </Badge>
+                </td>
+                <td>
+                  {r.status !== "confirmed" && (
+                    <Button
+                      className="small outline"
+                      onClick={() => {
+                        setSelected(r);
+                        setChecked(false);
+                        setError("");
+                      }}
+                    >
+                      Review registration
+                    </Button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {!admin.registrations.length && (
+        <Empty
+          title="No registrations yet"
+          description="Attendee details and payment references will appear here."
+        />
+      )}
+      <Dialog
+        open={!!selected}
+        onOpenChange={(v) => {
+          if (!v && !busy) setSelected(null);
+        }}
+      >
+        <DialogContent className="slk-dialog">
+          <DialogHeader>
+            <DialogTitle>Confirm this spot</DialogTitle>
+            <DialogDescription>{selected?.details.name || "Event attendee"}</DialogDescription>
+          </DialogHeader>
+          {selected && (
+            <>
+              <p>
+                {selected.details.amount > 0
+                  ? `Verify ${money(selected.details.amount)} in your FNB account with reference ${selected.details.reference}. A member marking an EFT as sent is not proof that funds arrived.`
+                  : "Confirm that this attendee has a place at the event. No payment is currently requested for this registration."}
+              </p>
+              <label className="check-label">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(e) => setChecked(e.target.checked)}
+                />
+                <span>
+                  {selected.details.amount > 0
+                    ? "I have verified the EFT in the bank account and confirm this spot."
+                    : "I confirm this attendee's spot."}
+                </span>
+              </label>
+              {error && (
+                <p role="alert" className="auth-error">
+                  {error}
+                </p>
+              )}
+              <Button
+                disabled={busy || !checked}
+                onClick={async () => {
+                  setBusy(true);
+                  setError("");
+                  try {
+                    await api("/admin/registration", {
+                      id: selected.id,
+                      confirm: checked,
+                      paymentVerified: selected.details.amount > 0 && checked,
+                    });
+                    onUpdate();
+                    setSelected(null);
+                    toast.success("Spot confirmed.");
+                  } catch (e: any) {
+                    setError(e.message);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                {busy ? "Confirming…" : "Confirm spot"}
+                <Check size={17} />
+              </Button>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </section>
   );
 }
 function About() {
@@ -911,6 +1284,9 @@ function Vouchers() {
               <span className="small-label">{i.business}</span>
               <h3>{i.title}</h3>
               <p>Valid until {dateLabel(i.expires)}</p>
+              <p className="voucher-window">
+                <Clock size={16} /> Redeem within {i.redeemHours ?? 48} hours of claiming
+              </p>
               <div className="ticket-divider" />
               <div className="card-foot">
                 <span>
@@ -954,6 +1330,11 @@ function Vouchers() {
                     "One claim per member. Present your voucher to the team for validation."}
                 </p>
                 <p>Expires: {dateLabel(selected.expires)}</p>
+                <p>
+                  <strong>Redeem within {selected.redeemHours ?? 48} hours after claiming.</strong>{" "}
+                  The offer expiry applies if it is earlier. Your saved deadline appears in your
+                  wallet.
+                </p>
               </div>
               {owned ? (
                 <div className="claim-success" role="status">
@@ -966,7 +1347,7 @@ function Vouchers() {
                   <p>
                     {owned.status === "redeemed"
                       ? "Your receipt is saved in your wallet."
-                      : "Keep it in your wallet until you are ready to redeem with staff."}
+                      : "Your redemption timer has started. Open your wallet to see the deadline, then redeem with staff before time runs out."}
                   </p>
                   <Button href={"/member?tab=wallet&claim=" + owned.id}>
                     Open my wallet <ArrowRight size={17} />
@@ -2041,7 +2422,18 @@ function Member() {
               {member.registrations.map((r: Item) => {
                 const item = data.entities.find((i: Item) => i.id === r.event_id);
                 return item ? (
-                  <EventCard item={item} key={r.id} />
+                  <div className="registered-event" key={r.id}>
+                    <Badge tone={r.status === "confirmed" ? "green" : "amber"}>
+                      {registrationLabels[r.status] || r.status}
+                    </Badge>
+                    <EventCard item={item} />
+                    <AppLink className="button outline" href={"/events?event=" + item.id}>
+                      {r.status === "confirmed"
+                        ? "View registration"
+                        : "View payment & registration"}
+                      <ArrowRight size={17} />
+                    </AppLink>
+                  </div>
                 ) : (
                   <div className="notice" key={r.id}>
                     This registered event has been archived. Contact the team for details.
@@ -2158,7 +2550,7 @@ function VoucherWallet({
   const [tick, setTick] = useState(Date.now());
   const requestEpoch = useRef(0);
   const mutating = useRef(false);
-  const selected = claims.find((c) => c.id === selectedId);
+  const selectedClaim = claims.find((c) => c.id === selectedId);
   const checkStatus = async () => {
     if (mutating.current) return;
     const epoch = ++requestEpoch.current;
@@ -2181,23 +2573,32 @@ function VoucherWallet({
   };
   useEffect(() => {
     void checkStatus();
+    const timer = setInterval(() => void checkStatus(), 30000);
+    const ticker = setInterval(() => setTick(Date.now()), 1000);
     return () => {
       requestEpoch.current++;
+      clearInterval(timer);
+      clearInterval(ticker);
     };
   }, []);
   useEffect(() => {
     if (!selectedId) return;
     setConfirmed(false);
     void checkStatus();
-    const timer = setInterval(() => void checkStatus(), 30000);
-    const ticker = setInterval(() => setTick(Date.now()), 1000);
-    return () => {
-      clearInterval(timer);
-      clearInterval(ticker);
-    };
   }, [selectedId]);
   const checked = !!clock.received && tick - clock.received < 45000;
   const serverNow = clock.server + tick - clock.received;
+  const timedOut = (c: Item) =>
+    c.status === "available" && c.redeem_by && Date.parse(c.redeem_by) <= serverNow;
+  const selected =
+    selectedClaim && timedOut(selectedClaim)
+      ? { ...selectedClaim, redeemable: false, invalidReason: "The redemption window has expired." }
+      : selectedClaim;
+  const timeLeft = (deadline: string) => {
+    const seconds = Math.max(0, Math.ceil((Date.parse(deadline) - serverNow) / 1000));
+    if (!seconds) return "Redemption window expired";
+    return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m ${seconds % 60}s left to redeem`;
+  };
   const freshReceipt =
     checked &&
     selected?.redeemed_at &&
@@ -2309,7 +2710,10 @@ function VoucherWallet({
         </Empty>
       ) : (
         <div className="wallet-grid">
-          {visible.map((c) => {
+          {visible.map((claim) => {
+            const c = timedOut(claim)
+              ? { ...claim, redeemable: false, invalidReason: "The redemption window has expired." }
+              : claim;
             const voucher = c.receipt || c.voucher || {};
             return (
               <button
@@ -2340,6 +2744,12 @@ function VoucherWallet({
                         : "No fixed expiry"
                       : c.invalidReason}
                 </p>
+                {c.status === "available" && c.redeem_by && (
+                  <div className={"voucher-countdown " + (timedOut(c) ? "expired" : "")}>
+                    <Clock size={17} />
+                    <span>{timeLeft(c.redeem_by)}</span>
+                  </div>
+                )}
                 <div className="wallet-card-foot">
                   <span>{c.status === "redeemed" ? "View receipt" : "Open voucher"}</span>
                   <ArrowUpRight size={18} />
@@ -2465,6 +2875,18 @@ function VoucherWallet({
                   </div>
                 )}
               </dl>
+              {selected.status === "available" && selected.redeem_by && (
+                <div className={"voucher-deadline " + (timedOut(selected) ? "expired" : "")}>
+                  <div className="voucher-countdown">
+                    <Clock size={20} />
+                    <strong>{timeLeft(selected.redeem_by)}</strong>
+                  </div>
+                  <p>
+                    Redeem by {stamp(selected.redeem_by)} SAST. This deadline was saved when you
+                    claimed the voucher.
+                  </p>
+                </div>
+              )}
               {selected.status === "available" && (
                 <div className="voucher-terms">
                   <strong>Offer terms</strong>
@@ -2967,8 +3389,17 @@ function Admin() {
                               event:
                                 admin.entities.find((e: Item) => e.id === r.event_id)?.title ||
                                 r.event_id,
-                              name: admin.users.find((u: Item) => u.id === r.user_id)?.name,
-                              email: admin.users.find((u: Item) => u.id === r.user_id)?.email,
+                              name:
+                                r.details.name ||
+                                admin.users.find((u: Item) => u.id === r.user_id)?.name,
+                              email:
+                                r.details.email ||
+                                admin.users.find((u: Item) => u.id === r.user_id)?.email,
+                              phone: r.details.phone,
+                              business: r.details.business,
+                              status: r.status,
+                              amount: r.details.amount,
+                              reference: r.details.reference,
                               registered: r.created_at,
                             })),
                             "event-registrations",
@@ -3072,6 +3503,7 @@ function Admin() {
                   </div>
                 </>
               )}
+              {tab === "events" && <EventAttendees admin={admin} onUpdate={load} />}
               {tab === "members" && (
                 <>
                   <div className="table-toolbar">
@@ -3566,6 +3998,20 @@ function Admin() {
                           onChange={(e: any) => setEditor({ ...editor, [k]: e.target.value })}
                         />
                       ))}
+                      <Field
+                        label="Hours to redeem after claiming"
+                        type="number"
+                        min={1}
+                        max={8760}
+                        step={1}
+                        required
+                        value={editor.redeemHours ?? 48}
+                        onChange={(e: any) => setEditor({ ...editor, redeemHours: e.target.value })}
+                      />
+                      <p className="form-note">
+                        Default: 48 hours. Changes apply to new claims. Existing claimed vouchers
+                        keep their saved deadline. The offer expiry takes precedence when earlier.
+                      </p>
                       <Field label="Terms & redemption instructions">
                         <textarea
                           required

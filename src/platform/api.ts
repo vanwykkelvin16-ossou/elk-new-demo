@@ -1,4 +1,4 @@
-import { defaultSettings, initialEntities } from "./seed";
+import { defaultSettings, initialEntities, eventBanking } from "./seed";
 import {
   SESSION_COOKIE,
   SIGNED_OUT_COOKIE,
@@ -108,19 +108,24 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
       if (user.role !== "admin") fail("Administrator access is required.", 403);
     };
     const claimView = (c: any, owner: any) => {
+      const redeemBy =
+        c.redeem_by || new Date(Date.parse(c.created_at) + 48 * 3600000).toISOString();
       const voucher = catalog.find((e: any) => e.id === c.voucher_id && e.kind === "vouchers");
       const reason =
         c.status !== "available"
           ? "This voucher has already been redeemed."
-          : !active(owner)
-            ? "An active membership is required to redeem."
-            : !voucher || voucher.status !== "published"
-              ? "This offer is no longer available."
-              : voucher.expires && voucher.expires < now().slice(0, 10)
-                ? "This voucher has expired."
-                : "";
+          : redeemBy <= now()
+            ? "The redemption window has expired."
+            : !active(owner)
+              ? "An active membership is required to redeem."
+              : !voucher || voucher.status !== "published"
+                ? "This offer is no longer available."
+                : voucher.expires && voucher.expires < now().slice(0, 10)
+                  ? "This voucher has expired."
+                  : "";
       return {
         ...c,
+        redeem_by: redeemBy,
         receipt: c.receipt ? JSON.parse(c.receipt) : null,
         voucher: voucher || null,
         redeemable: !reason,
@@ -141,11 +146,12 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
         demo: !!view.voucher.demo,
       };
       const result = await run(
-        "UPDATE claims SET status='redeemed',redeemed_at=?,receipt=? WHERE id=? AND user_id=? AND status='available' AND EXISTS(SELECT 1 FROM users WHERE id=? AND disabled=0 AND membership='active' AND (expires IS NULL OR expires>=?)) AND EXISTS(SELECT 1 FROM entities WHERE id=? AND json_extract(data,'$.status')='published' AND (coalesce(json_extract(data,'$.expires'),'')='' OR json_extract(data,'$.expires')>=?))",
+        "UPDATE claims SET status='redeemed',redeemed_at=?,receipt=? WHERE id=? AND user_id=? AND status='available' AND coalesce(redeem_by,strftime('%Y-%m-%dT%H:%M:%fZ',created_at,'+48 hours'))>? AND EXISTS(SELECT 1 FROM users WHERE id=? AND disabled=0 AND membership='active' AND (expires IS NULL OR expires>=?)) AND EXISTS(SELECT 1 FROM entities WHERE id=? AND json_extract(data,'$.status')='published' AND (coalesce(json_extract(data,'$.expires'),'')='' OR json_extract(data,'$.expires')>=?))",
         timestamp,
         JSON.stringify(receipt),
         c.id,
         owner.id,
+        timestamp,
         owner.id,
         timestamp.slice(0, 10),
         c.voucher_id,
@@ -389,7 +395,9 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
         claims: (
           await all("SELECT * FROM claims WHERE user_id=? ORDER BY created_at DESC", user.id)
         ).map((c: any) => claimView(c, user)),
-        registrations: await all("SELECT * FROM registrations WHERE user_id=?", user.id),
+        registrations: (await all("SELECT * FROM registrations WHERE user_id=?", user.id)).map(
+          (r: any) => ({ ...r, details: JSON.parse(r.details || "{}") }),
+        ),
         businesses: catalog.filter((e: any) => e.kind === "businesses" && e.ownerId === user.id),
         submissions: await all(
           "SELECT * FROM submissions WHERE user_id=? ORDER BY created_at DESC",
@@ -456,20 +464,47 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
       if (v.expires && v.expires < now().slice(0, 10)) fail("This voucher has expired.");
       const id = uid(),
         code = "SLK-" + uid().replace(/-/g, "").slice(0, 12).toUpperCase();
+      const createdAt = now();
+      const hours =
+        Number.isInteger(Number(v.redeemHours)) &&
+        Number(v.redeemHours) >= 1 &&
+        Number(v.redeemHours) <= 8760
+          ? Number(v.redeemHours)
+          : 48;
+      const windowEnd = Date.parse(createdAt) + hours * 3600000;
+      const offerEnd = v.expires ? Date.parse(v.expires + "T23:59:59.999Z") : Infinity;
+      const redeemBy = new Date(
+        Math.min(windowEnd, Number.isFinite(offerEnd) ? offerEnd : Infinity),
+      ).toISOString();
       const result = await run(
-        "INSERT OR IGNORE INTO claims(id,user_id,voucher_id,code,created_at) SELECT ?,?,?,?,? WHERE (SELECT COUNT(*) FROM claims WHERE voucher_id=?) < ?",
+        "INSERT OR IGNORE INTO claims(id,user_id,voucher_id,code,created_at,redeem_by) SELECT ?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM claims WHERE voucher_id=?) < ?",
         id,
         user.id,
         v.id,
         code,
-        now(),
+        createdAt,
+        redeemBy,
         v.id,
         Number(v.limit) || 999999,
       );
       if (!result.meta.changes)
         fail("You have already claimed this voucher, or all vouchers have been claimed.", 409);
       await log(user.id, "voucher.claimed", v.id);
-      return json({ ok: true, id, code });
+      return json({ ok: true, id, code, redeemBy });
+    }
+    if (path === "/registration" && request.method === "GET") {
+      mustUser();
+      const eventId = new URL(request.url).searchParams.get("event");
+      const registration = await one(
+        "SELECT * FROM registrations WHERE event_id=? AND user_id=?",
+        eventId,
+        user.id,
+      );
+      return json({
+        registration: registration
+          ? { ...registration, details: JSON.parse(registration.details || "{}") }
+          : null,
+      });
     }
     if (path === "/register" && request.method === "POST") {
       mustUser();
@@ -479,16 +514,73 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
       );
       if (!e) fail("This event is unavailable.", 404);
       if (e.date && e.date < now().slice(0, 10)) fail("Registration has closed.");
+      const name = clean(b.name, 120),
+        email = clean(b.email, 200).toLowerCase(),
+        phone = clean(b.phone, 40);
+      if (!name || !/^\S+@\S+\.\S+$/.test(email) || phone.replace(/\D/g, "").length < 7)
+        fail("Please enter your name, a valid email and a contact number.");
+      if (b.consent !== true) fail("Please agree to the use of your details for this event.");
+      const id = uid(),
+        createdAt = now();
+      const amount = Math.max(0, Number(e.price) || 0);
+      const status = amount > 0 ? "pending_payment" : "pending_confirmation";
+      const details = {
+        name,
+        email,
+        phone,
+        business: clean(b.business, 150),
+        amount,
+        reference: "SLK-" + id.replaceAll("-", "").slice(0, 12).toUpperCase(),
+        banking: eventBanking,
+        consentAt: createdAt,
+      };
       const r = await run(
-        "INSERT OR IGNORE INTO registrations(id,user_id,event_id,created_at) SELECT ?,?,?,? WHERE (SELECT COUNT(*) FROM registrations WHERE event_id=?) < ?",
-        uid(),
+        "INSERT OR IGNORE INTO registrations(id,user_id,event_id,created_at,status,details) SELECT ?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM registrations WHERE event_id=?) < ?",
+        id,
         user.id,
         e.id,
-        now(),
+        createdAt,
+        status,
+        JSON.stringify(details),
         e.id,
         Number(e.capacity) || 999999,
       );
-      if (!r.meta.changes) fail("You are already registered, or this event is full.", 409);
+      if (!r.meta.changes)
+        fail("You have already registered your interest, or this event is full.", 409);
+      await log(user.id, "event.interest_registered", id);
+      return json({
+        ok: true,
+        registration: {
+          id,
+          user_id: user.id,
+          event_id: e.id,
+          created_at: createdAt,
+          status,
+          details,
+        },
+      });
+    }
+    if (path === "/registration-payment" && request.method === "POST") {
+      mustUser();
+      const b = (await request.json()) as any;
+      if (b.paymentSent !== true) fail("Confirm that you have made the EFT payment.");
+      const registration = await one(
+        "SELECT * FROM registrations WHERE id=? AND user_id=?",
+        clean(b.id, 100),
+        user.id,
+      );
+      if (!registration) fail("Registration not found.", 404);
+      const details = JSON.parse(registration.details || "{}");
+      if (!(details.amount > 0)) fail("Payment is not requested for this registration.");
+      const result = await run(
+        "UPDATE registrations SET status='payment_review',details=? WHERE id=? AND user_id=? AND status='pending_payment'",
+        JSON.stringify({ ...details, paymentSentAt: now() }),
+        registration.id,
+        user.id,
+      );
+      if (!result.meta.changes)
+        fail("This registration is already being reviewed or confirmed.", 409);
+      await log(user.id, "event.payment_reported", registration.id);
       return json({ ok: true });
     }
     if (path === "/submissions" && request.method === "POST") {
@@ -590,11 +682,34 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
           users: await all("SELECT * FROM users ORDER BY created_at DESC"),
           submissions: await all("SELECT * FROM submissions ORDER BY created_at DESC"),
           claims: await all("SELECT * FROM claims ORDER BY created_at DESC"),
-          registrations: await all("SELECT * FROM registrations ORDER BY created_at DESC"),
+          registrations: (await all("SELECT * FROM registrations ORDER BY created_at DESC")).map(
+            (r: any) => ({ ...r, details: JSON.parse(r.details || "{}") }),
+          ),
           audit: await all("SELECT * FROM audit ORDER BY created_at DESC LIMIT 100"),
           settings,
         });
       const b = (await request.json()) as any;
+      if (path === "/admin/registration") {
+        const registration = await one("SELECT * FROM registrations WHERE id=?", clean(b.id, 100));
+        if (!registration) fail("Registration not found.", 404);
+        const details = JSON.parse(registration.details || "{}");
+        if (b.confirm !== true) fail("Confirm this attendee's spot before continuing.");
+        if (details.amount > 0 && b.paymentVerified !== true)
+          fail("Verify the EFT payment in your bank account before confirming this spot.");
+        const result = await run(
+          "UPDATE registrations SET status='confirmed',details=? WHERE id=? AND status IN ('pending_payment','payment_review','pending_confirmation')",
+          JSON.stringify({
+            ...details,
+            confirmedAt: now(),
+            confirmedBy: user.id,
+            paymentVerified: details.amount > 0,
+          }),
+          registration.id,
+        );
+        if (!result.meta.changes) fail("This spot has already been confirmed.", 409);
+        await log(user.id, "event.spot_confirmed", registration.id);
+        return json({ ok: true });
+      }
       if (path === "/admin/seed") {
         await db.batch(
           initialEntities.map((e) =>
@@ -611,6 +726,12 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
           fail("A title and valid content type are required.");
         if (!["published", "draft", "pending", "archived"].includes(b.status))
           fail("Choose a valid publishing status.");
+        const redeemHours = b.redeemHours === undefined ? 48 : Number(b.redeemHours);
+        if (
+          b.kind === "vouchers" &&
+          (!Number.isInteger(redeemHours) || redeemHours < 1 || redeemHours > 8760)
+        )
+          fail("Enter a whole number from 1 to 8760 for redemption hours.");
         const id = b.id || uid();
         const data = {
           id,
@@ -629,6 +750,7 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
           terms: clean(b.terms, 3000),
           expires: clean(b.expires, 10),
           limit: Math.max(1, Number(b.limit) || 100),
+          redeemHours: b.kind === "vouchers" ? redeemHours : undefined,
           demo: b.demo === true,
           status: b.status,
           phone: clean(b.phone, 50),

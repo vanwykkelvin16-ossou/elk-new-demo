@@ -1,3 +1,8 @@
+export const eventBanking = {
+  bank: "FNB",
+  accountType: "Business account",
+  account: "63135151221",
+};
 export const defaultSettings = {
   headline: "A little love. A stronger Krugersdorp.",
   intro:
