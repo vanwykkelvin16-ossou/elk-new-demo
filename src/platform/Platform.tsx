@@ -664,6 +664,7 @@ function EventCard({ item }: any) {
         <div className="date-meta">
           <CalendarDays size={15} />
           {dateLabel(item.date)}
+          {item.time ? " · " + item.time + " SAST" : ""}
         </div>
         <h3>{item.title}</h3>
         <p>
@@ -726,16 +727,6 @@ function Events() {
                 src={selected.image || "/community/gathering.jpg"}
                 alt={selected.title}
               />
-              <div className="detail-meta">
-                <span>
-                  <CalendarDays />
-                  {dateLabel(selected.date)} {selected.time}
-                </span>
-                <span>
-                  <MapPin />
-                  {selected.location}
-                </span>
-              </div>
               <p>{selected.description}</p>
               {session.user ? (
                 <EventRegistration
@@ -746,6 +737,7 @@ function Events() {
               ) : (
                 <div className="event-registration">
                   <h3>Register your interest</h3>
+                  <EventSchedule event={selected} />
                   <p>
                     Sign in to fill in your contact details, receive your payment reference and
                     track confirmation of your spot.
@@ -812,6 +804,56 @@ function EventBankDetails({ amount, reference }: { amount: number; reference?: s
     </section>
   );
 }
+function EventSchedule({ event, compact = false }: { event?: Item; compact?: boolean }) {
+  return (
+    <section
+      className={"event-schedule " + (compact ? "compact" : "")}
+      aria-label="Event date and venue"
+    >
+      {!compact && (
+        <div className="event-schedule-title">
+          <CalendarDays size={23} aria-hidden="true" />
+          <strong>{event?.title || "Event details"}</strong>
+        </div>
+      )}
+      <dl>
+        <div>
+          <dt>
+            <CalendarDays size={17} aria-hidden="true" />
+            Date
+          </dt>
+          <dd>
+            {event?.date ? (
+              <time dateTime={event.date}>{dateLabel(event.date)}</time>
+            ) : (
+              "Date to be announced"
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>
+            <Clock size={17} aria-hidden="true" />
+            Time
+          </dt>
+          <dd>{event?.time ? event.time + " SAST" : "Time to be announced"}</dd>
+        </div>
+        <div>
+          <dt>
+            <MapPin size={17} aria-hidden="true" />
+            Venue
+          </dt>
+          <dd>{event?.location || "Venue to be announced"}</dd>
+        </div>
+      </dl>
+      {!event?.date && !compact && (
+        <p>
+          The team will confirm the date before the event. Your registration is for the event shown
+          above.
+        </p>
+      )}
+    </section>
+  );
+}
 function EventRegistration({ event, user }: { event: Item; user: Item }) {
   const [registration, setRegistration] = useState<Item | null>(null);
   const [loading, setLoading] = useState(true);
@@ -857,6 +899,7 @@ function EventRegistration({ event, user }: { event: Item; user: Item }) {
               ? "Your EFT has been marked as sent. The team will check the payment before confirming your spot."
               : "Your place is awaiting confirmation from the team."}
         </p>
+        <EventSchedule event={event} />
         <div className="registration-contact">
           <strong>{registration.details.name || user.name}</strong>
           <span>{registration.details.email || user.email}</span>
@@ -915,6 +958,7 @@ function EventRegistration({ event, user }: { event: Item; user: Item }) {
   return (
     <div className="event-registration">
       <h3>Register your interest</h3>
+      <EventSchedule event={event} />
       <p>
         Tell us who is coming. One registration reserves a request for one person; the team confirms
         your spot.
@@ -1037,6 +1081,10 @@ function EventAttendees({ admin, onUpdate }: { admin: Item; onUpdate: () => void
                 </td>
                 <td>
                   {admin.entities.find((e: Item) => e.id === r.event_id)?.title || "Archived event"}
+                  <EventSchedule
+                    compact
+                    event={admin.entities.find((e: Item) => e.id === r.event_id)}
+                  />
                 </td>
                 <td>
                   {r.details.amount > 0 ? money(r.details.amount) : "No payment requested"}
@@ -1087,6 +1135,7 @@ function EventAttendees({ admin, onUpdate }: { admin: Item; onUpdate: () => void
           </DialogHeader>
           {selected && (
             <>
+              <EventSchedule event={admin.entities.find((e: Item) => e.id === selected.event_id)} />
               <p>
                 {selected.details.amount > 0
                   ? `Verify ${money(selected.details.amount)} in your FNB account with reference ${selected.details.reference}. A member marking an EFT as sent is not proof that funds arrived.`
@@ -3400,6 +3449,15 @@ function Admin() {
                               status: r.status,
                               amount: r.details.amount,
                               reference: r.details.reference,
+                              event_date:
+                                admin.entities.find((e: Item) => e.id === r.event_id)?.date ||
+                                "Date to be announced",
+                              event_time:
+                                admin.entities.find((e: Item) => e.id === r.event_id)?.time ||
+                                "Time to be announced",
+                              venue:
+                                admin.entities.find((e: Item) => e.id === r.event_id)?.location ||
+                                "Venue to be announced",
                               registered: r.created_at,
                             })),
                             "event-registrations",

@@ -1615,3 +1615,84 @@ footer {
 .voucher-countdown.expired {
   color: #676e73;
 }
+.event-schedule {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #fff;
+  padding: 23px;
+}
+.event-schedule-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 21px;
+  font-size: 18px;
+  line-height: 1.4;
+}
+.event-schedule-title > svg {
+  color: var(--red);
+  flex-shrink: 0;
+}
+.event-schedule dl {
+  display: grid;
+  gap: 15px;
+  margin: 0;
+}
+.event-schedule dl > div {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.event-schedule dt {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--muted);
+}
+.event-schedule dt svg {
+  flex-shrink: 0;
+}
+.event-schedule dd {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.event-schedule > p {
+  margin: 20px 0 0;
+  padding-top: 17px;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+  line-height: 1.7;
+}
+.event-schedule.compact {
+  border: 0;
+  border-radius: 0;
+  padding: 13px 0 0;
+  background: transparent;
+}
+.event-schedule.compact dl {
+  gap: 9px;
+}
+.event-schedule.compact dl > div {
+  grid-template-columns: 65px minmax(130px, 1fr);
+  gap: 12px;
+  font-size: 13px;
+}
+.event-schedule.compact dt svg {
+  display: none;
+}
+@media (max-width: 700px) {
+  .event-schedule {
+    padding: 20px 18px;
+  }
+  .event-schedule dl > div {
+    grid-template-columns: 75px minmax(0, 1fr);
+    gap: 12px;
+  }
+  .event-schedule-title {
+    font-size: 17px;
+  }
+}
