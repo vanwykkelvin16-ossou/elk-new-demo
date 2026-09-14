@@ -1,3 +1,7 @@
-import {createFileRoute} from "@tanstack/react-router";
+import { pageSEO } from "@/platform/seo";
+import { createFileRoute } from "@tanstack/react-router";
 import Platform from "@/platform/Platform";
-export const Route=createFileRoute("/onboarding")({component:Platform});
+export const Route = createFileRoute("/onboarding")({
+  head: () => pageSEO("/onboarding"),
+  component: Platform,
+});

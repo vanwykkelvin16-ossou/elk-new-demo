@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as VouchersRouteImport } from './routes/vouchers'
 import { Route as SponsorRouteImport } from './routes/sponsor'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as MembershipRouteImport } from './routes/membership'
@@ -55,6 +56,11 @@ const SponsorRoute = SponsorRouteImport.update({
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
   path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrivacyRoute = PrivacyRouteImport.update({
@@ -218,6 +224,7 @@ export interface FileRoutesByFullPath {
   '/membership': typeof MembershipRoute
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/sponsor': typeof SponsorRoute
   '/vouchers': typeof VouchersRoute
@@ -251,6 +258,7 @@ export interface FileRoutesByTo {
   '/membership': typeof MembershipRoute
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/sponsor': typeof SponsorRoute
   '/vouchers': typeof VouchersRoute
@@ -286,6 +294,7 @@ export interface FileRoutesById {
   '/membership': typeof MembershipRoute
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/sponsor': typeof SponsorRoute
   '/vouchers': typeof VouchersRoute
@@ -322,6 +331,7 @@ export interface FileRouteTypes {
     | '/membership'
     | '/onboarding'
     | '/privacy'
+    | '/reset-password'
     | '/signup'
     | '/sponsor'
     | '/vouchers'
@@ -355,6 +365,7 @@ export interface FileRouteTypes {
     | '/membership'
     | '/onboarding'
     | '/privacy'
+    | '/reset-password'
     | '/signup'
     | '/sponsor'
     | '/vouchers'
@@ -389,6 +400,7 @@ export interface FileRouteTypes {
     | '/membership'
     | '/onboarding'
     | '/privacy'
+    | '/reset-password'
     | '/signup'
     | '/sponsor'
     | '/vouchers'
@@ -424,6 +436,7 @@ export interface RootRouteChildren {
   MembershipRoute: typeof MembershipRoute
   OnboardingRoute: typeof OnboardingRoute
   PrivacyRoute: typeof PrivacyRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   SignupRoute: typeof SignupRoute
   SponsorRoute: typeof SponsorRoute
   VouchersRoute: typeof VouchersRoute
@@ -450,6 +463,13 @@ declare module '@tanstack/react-router' {
       path: '/signup'
       fullPath: '/signup'
       preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/privacy': {
@@ -719,6 +739,7 @@ const rootRouteChildren: RootRouteChildren = {
   MembershipRoute: MembershipRoute,
   OnboardingRoute: OnboardingRoute,
   PrivacyRoute: PrivacyRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   SignupRoute: SignupRoute,
   SponsorRoute: SponsorRoute,
   VouchersRoute: VouchersRoute,

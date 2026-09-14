@@ -8,7 +8,7 @@
     "build": "vite build && node scripts/stage-sites.mjs",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
-    "deploy": "NODE_ENV=production vite build && wrangler deploy --config .output/server/wrangler.json",
+    "deploy": "npm run build && wrangler deploy --config dist/server/wrangler.json",
     "lint": "eslint .",
     "format": "prettier --write .",
     "db:generate": "drizzle-kit generate"
@@ -88,9 +88,22 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
+    "miniflare": "4.20260730.0",
     "prettier": "^3.7.3",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.56.1",
     "vite": "^7.3.1"
+  },
+  "overrides": {
+    "@esbuild-kit/core-utils": {
+      "esbuild": "0.28.2"
+    },
+    "vite": {
+      "esbuild": "0.28.2"
+    },
+    "miniflare@4.20260730.0": {
+      "undici": "^7.29.0",
+      "sharp": "^0.35.4"
+    }
   }
 }

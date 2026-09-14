@@ -1,54 +1,55 @@
-# SO LOVE KRUGERSDORP — New Demo
+# SO LOVE KRUGERSDORP
 
-Independent redesign based on `vanwykkelvin16-ossou/so-love-vouchers` and SLKD's public website. The original GitHub repository and its live services were not modified.
+Community website and installable PWA for events, membership, business listings and single-use vouchers.
 
-## Included
+All new work belongs to `vanwykkelvin16-ossou/elk-new-demo`. The original `so-love-vouchers` repository and its services have not been changed. Original source is retained under `legacy/`; original credentials are disconnected.
 
-- Responsive public website: home, story, events, business directory, vouchers, membership, sponsorship, donations, contact and privacy.
-- Member accounts, payment-verification status, annual membership expiry, voucher wallet/history, event registrations and business-profile submissions.
-- Server-side membership gating, atomic single-claim limits and one-time redemption. Members claim vouchers into their wallet, open a voucher in front of staff and explicitly confirm redemption. The server checks ownership, active membership, publication and expiry before recording the use. A receipt keeps the offer details, member name, code and timestamp; past receipts cannot be used again. Live status refreshes while the voucher is open, and the “just redeemed” treatment ends after two minutes.
-- Admin management of events, vouchers, businesses, sponsors, members, enquiries, donation pledges, membership payments, website settings and activity history. Published content updates the public site. Deletion archives records to preserve history.
-- Cloudflare D1 persistence and R2 image uploads. Original Supabase credentials are disconnected.
-- PWA manifest, installable app icon and offline fallback. Protected pages and APIs are never cached by the service worker.
-
-## Demo access and activation
-
-Visitors can create an SLKD account with an email and password; ChatGPT is not required. Accounts start with inactive membership. Existing platform accounts keep their memberships and history: sign in using the earlier demo option once, then set a password under My details. Password setup never links an anonymous signup to an existing account by email. Passwords are salted with PBKDF2; opaque sessions are stored hashed in D1 and sent only in Secure, HttpOnly, SameSite cookies. Authentication has server-side rate limits and same-origin checks. Changing a password revokes existing app sessions. Password reset/email verification delivery is not configured; the login screen directs account-help requests to the team. The first administrator enters the private setup code configured as `ADMIN_BOOTSTRAP_KEY`; never commit that code.
-
-The admin can independently verify a membership payment to activate one year of access. No card processor is connected. Donation forms record pledges, sponsorship forms record enquiries, and the contact form saves requests in the admin inbox; these forms do not send email or charge cards.
-
-Before public/customer launch, connect the chosen payment processor and account-recovery email service, verify current membership pricing and banking details, replace the example voucher, confirm event dates, and review the privacy notice. The configured R240 annual demo price came from the linked SLKD membership form and is editable. Upcoming event cards accept expressions of interest until dates are set.
-
-## Source preservation
-
-The initial local commit preserves the available original source. Original route implementations are also retained under `legacy/routes`. The original Bun lockfile is retained under `original-lockfiles`; npm is the active package manager. `source-copy-manifest.json` records all original file paths and Git blob hashes.
-
-Original `.env` and `.mcp.json` runtime/connection configuration are deliberately excluded from the new repository. The original 2.36 MB `public/events/slk-breakfast.png` could not be retrieved through the connected GitHub interface; it remains available in the original repository. This image is not used by the new design. All other source assets were copied and three authentic SLKD community photographs were added.
-
-## Development and verification
+## Running the application
 
 - `npm ci`
 - `npm run build`
 - `npx tsc --noEmit`
-- `node scripts/verify-platform.mjs` — isolated SQLite workflow and access-control checks.
-- `node scripts/verify-worker.mjs` — local Worker rendering and D1 checks.
+- `node scripts/verify-platform.mjs`
+- `node scripts/verify-worker.mjs`
 
-D1 schema is in `db/schema.ts`; generated schema-only migrations are in `drizzle/`. Sites provisions and binds `DB` and `BUCKET`. Production secrets belong in Sites runtime settings, never source files. The Worker trusts identity headers only behind the Sites dispatcher; standalone hosting requires equivalent header sanitisation/authentication.
+This is a **Cloudflare Worker application** using D1 (`DB`) and R2 (`BUCKET`). Sites provisions these bindings using `.openai/hosting.json` and applies generated migrations from `drizzle/`. It is not a static export or a Vercel-ready backend. For another provider, provision equivalent persistence and migrate the server before changing hosting.
 
-## Content and photography
+Standalone Cloudflare deployment requires D1/R2 bindings and migration application in addition to the generated `dist/server/wrangler.json`. Do not run the standalone deploy command against an unconfigured account. Keep `TRUST_SITES_IDENTITY` unset outside the trusted Sites dispatcher. Never expose a standalone Worker that trusts user-supplied identity headers.
 
-Organisation reference: https://slkd.co.za
-Membership reference: https://form.jotform.com/242462640866057
-Community photos: SLKD's website (`Angus crowd Krugersdorp.jpg`, gallery images dated 19 May 2026). Local filenames: `public/community/gathering.jpg`, `outreach.jpg`, `team.jpg`.
+## Accounts and access
 
-## GitHub destination
+Public visitors browse without ChatGPT. SLKD accounts use email/password, salted PBKDF2 hashes, hashed opaque sessions and Secure/HttpOnly/SameSite cookies. Membership starts inactive. Only administrators can verify payment and activate membership. Password changes revoke existing app sessions. Protected responses are not cached by the service worker.
 
-All new work is stored in `vanwykkelvin16-ossou/elk-new-demo`. No source remote points to the original repository.
+Existing Sites-linked accounts are retained when `TRUST_SITES_IDENTITY=true` is explicitly configured behind the Sites dispatcher. These members can set an app password under My details. The first administrator uses the private `ADMIN_BOOTSTRAP_KEY` runtime secret. Never commit the secret or expose it in browser code.
 
-## Navigation
+Account recovery: an administrator independently verifies the member's identity using existing contact information, opens **Members → Manage membership → Account recovery**, creates a one-use recovery link, and shares it privately. It expires after 15 minutes and is stored only as a hash. Creating another link invalidates the old link. Using the link revokes existing sessions. The URL token is held in its fragment and removed from the address bar when opened. No email delivery service or automated email verification is configured.
 
-The shared app shell stays mounted across routes. Internal links use TanStack navigation, including event details and member/admin tabs. Initial account checks show a neutral loading state rather than briefly displaying a sign-in form.
+## Payments and vouchers
 
-## Mobile and involvement pages
+Payments use the organisation's manual EFT workflow. No card processor is connected and no card details are collected. FNB Business account `63135151221` is the account supplied by the owner; the organisation must verify its ownership and the R240 annual membership price before taking real payments.
 
-The navigation includes a Get involved dropdown for Membership, Sponsorship and Donations. Membership uses a welcoming photo-led introduction, benefit cards, annual plan and clear joining steps. Sponsorship and Donations have distinct introductions and focused enquiry/pledge forms. Mobile layouts use fluid grids, readable spacing, touch-friendly controls and dialogs that fit the available screen height. Donation choices remain pledges; no card payment is processed.
+Donation forms record pledges and sponsorship/contact forms save enquiries to the admin inbox. These actions do not charge money or send emails. Membership access and paid event places are activated only after the administrator checks the payment in the bank account.
+
+A paid active member claims an offer into their wallet, then redeems it in front of staff. The server enforces ownership, publication, membership, inventory, one claim per member and single redemption. The default redemption window is 48 hours; admins can change it per voucher. A claim's saved deadline does not change later. The earlier offer expiry applies in South African time. Redemption produces an immutable receipt with the code and server timestamp.
+
+The release moves demonstration offers into drafts, hides them publicly and prevents claiming/redemption. Existing real records, event expressions of interest, member history and receipts are retained. An administrator must enter and approve genuine offers before publishing. Seed event templates on a new installation are drafts until configured.
+
+## Administration
+
+The grouped menu separates events/attendance, people/support and offers/activity. **Registrations** is its own workspace with Interest registered, Awaiting payment, Payment review and Spot confirmed destinations, counts, attendee/reference search, an event filter and export of the current view. Phone layouts use a vertical menu and stacked attendee cards.
+
+Content has published/draft/pending/archived filters. Requests have type and status filters. Archived content can be reopened and restored through the editor. The removed Website settings menu remains removed. Payment verification, event confirmation and voucher redemption remain server-authorised actions.
+
+Image uploads are limited to administrators and active members, with size/type checks and rate limits. Uploads are public business/event images, not private payment documents. Member account and payment data are not included in public APIs.
+
+## SEO and PWA
+
+Public routes have page-specific titles, descriptions, canonical links and sharing metadata. Account/admin routes are noindex. The server supplies robots.txt, sitemap.xml, real 404s and security headers. The canonical origin is in `src/platform/seo.ts`; change it only when the final domain is configured. No domain migration to slkd.co.za has been performed.
+
+The app includes correctly sized Android/iPhone icons and an offline fallback. Voucher redemption requires a live connection and server validation. Push notifications are not implemented. Real-device installation and interactive browser acceptance still require verification; the managed audit browser could not open its preview.
+
+## Photography and release record
+
+SLKD community photographs were sourced from the organisation's website or supplied by the owner. Stock sources and reuse details are recorded in `public/stock/credits.json`; community asset provenance is in `public/community/credits.json`. No extra stock assets were invented for this release.
+
+See `docs/LAUNCH-REVIEW.md` for verification evidence, limits and the remaining organisation-owned launch decisions. Dependency overrides patch esbuild, undici and sharp advisories while keeping the tested Miniflare 4 interface. Recheck these overrides when upgrading the toolchain.

@@ -89,3 +89,14 @@ export const audit = sqliteTable("audit", {
   target: text("target").notNull(),
   createdAt: text("created_at").notNull(),
 });
+
+export const passwordResets = sqliteTable(
+  "password_resets",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    userId: text("user_id").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    consumed: integer("consumed").notNull().default(0),
+  },
+  (t) => [uniqueIndex("reset_user").on(t.userId)],
+);

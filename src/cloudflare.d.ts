@@ -1,1 +1,3 @@
-declare module "cloudflare:workers" {export const env: any;}
+declare module "cloudflare:workers" {
+  export const env: any;
+}

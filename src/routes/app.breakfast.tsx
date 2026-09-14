@@ -1,2 +1,6 @@
-import {createFileRoute} from "@tanstack/react-router";
-export const Route=createFileRoute("/app/breakfast")({component:()=>null});
+import { pageSEO } from "@/platform/seo";
+import { createFileRoute } from "@tanstack/react-router";
+export const Route = createFileRoute("/app/breakfast")({
+  head: () => pageSEO("/app/breakfast"),
+  component: () => null,
+});

@@ -52,6 +52,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Toaster, toast } from "sonner";
 import { api, money, dateLabel } from "./client";
+import { AdminRecovery, PasswordRecovery } from "./Recovery";
 import { defaultSettings, initialEntities, eventBanking } from "./seed";
 import "./platform.css";
 import "./editorial.css";
@@ -67,6 +68,7 @@ const publicNav = [
 const adminNav = [
   ["overview", "Overview", LayoutDashboard],
   ["events", "Events", CalendarDays],
+  ["registrations", "Registrations", FileText],
   ["vouchers", "Vouchers", Ticket],
   ["businesses", "Businesses", Building2],
   ["members", "Members", Users],
@@ -1042,7 +1044,41 @@ function EventRegistration({ event, user }: { event: Item; user: Item }) {
     </div>
   );
 }
-function EventAttendees({ admin, onUpdate }: { admin: Item; onUpdate: () => void }) {
+function EventAttendees({
+  admin,
+  onUpdate,
+  onExport,
+}: {
+  admin: Item;
+  onUpdate: () => void;
+  onExport: (rows: Item[]) => void;
+}) {
+  const { search } = useSite();
+  const requestedStatus = search.get("status") || "all";
+  const status = requestedStatus in registrationLabels ? requestedStatus : "all";
+  const [query, setQuery] = useState("");
+  const [eventId, setEventId] = useState("");
+  const registrations = admin.registrations.filter((r: Item) => {
+    const attendee = admin.users.find((u: Item) => u.id === r.user_id);
+    const event = admin.entities.find((e: Item) => e.id === r.event_id);
+    return (
+      (status === "all" || r.status === status) &&
+      (!eventId || r.event_id === eventId) &&
+      [
+        r.details.name,
+        r.details.email,
+        r.details.phone,
+        r.details.reference,
+        r.details.business,
+        attendee?.name,
+        attendee?.email,
+        event?.title,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(query.toLowerCase())
+    );
+  });
   const [selected, setSelected] = useState<Item | null>(null);
   const [checked, setChecked] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -1052,9 +1088,65 @@ function EventAttendees({ admin, onUpdate }: { admin: Item; onUpdate: () => void
       <div className="panel-heading">
         <h2>Event registrations</h2>
       </div>
-      <p className="panel-padding">
-        Check each EFT in your bank account before confirming a paid spot.
-      </p>
+      <div className="registration-controls">
+        <p>
+          Follow each attendee from their first interest to a confirmed spot. Check paid
+          registrations against your bank account before confirming.
+        </p>
+        <nav className="registration-status-nav" aria-label="Registration status">
+          {[["all", "All registrations"], ...Object.entries(registrationLabels)].map(
+            ([value, label]) => (
+              <AppLink
+                key={value}
+                href={"/admin?tab=registrations&status=" + value}
+                className={status === value ? "selected" : ""}
+                aria-current={status === value ? "page" : undefined}
+              >
+                <span>{label}</span>
+                <strong>
+                  {
+                    admin.registrations.filter((r: Item) => value === "all" || r.status === value)
+                      .length
+                  }
+                </strong>
+              </AppLink>
+            ),
+          )}
+        </nav>
+        <div className="registration-search-row">
+          <label className="search-control">
+            <Search size={18} />
+            <input
+              aria-label="Search registrations"
+              placeholder="Search name, email or reference"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </label>
+          <select
+            aria-label="Filter registrations by event"
+            value={eventId}
+            onChange={(e) => setEventId(e.target.value)}
+          >
+            <option value="">All events</option>
+            {admin.entities
+              .filter((e: Item) => e.kind === "events")
+              .map((e: Item) => (
+                <option key={e.id} value={e.id}>
+                  {e.title}
+                </option>
+              ))}
+          </select>
+          <Button className="outline" onClick={() => onExport(registrations)}>
+            <Download size={17} />
+            Export this view
+          </Button>
+        </div>
+        <small aria-live="polite">
+          {registrations.length} {registrations.length === 1 ? "registration" : "registrations"}{" "}
+          shown
+        </small>
+      </div>
       <div className="table-scroll">
         <table>
           <thead>
@@ -1067,9 +1159,9 @@ function EventAttendees({ admin, onUpdate }: { admin: Item; onUpdate: () => void
             </tr>
           </thead>
           <tbody>
-            {admin.registrations.map((r: Item) => (
+            {registrations.map((r: Item) => (
               <tr key={r.id}>
-                <td>
+                <td data-label="Attendee">
                   <strong>
                     {r.details.name || admin.users.find((u: Item) => u.id === r.user_id)?.name}
                   </strong>
@@ -1079,25 +1171,25 @@ function EventAttendees({ admin, onUpdate }: { admin: Item; onUpdate: () => void
                   <div>{r.details.phone}</div>
                   {r.details.business && <small>{r.details.business}</small>}
                 </td>
-                <td>
+                <td data-label="Event">
                   {admin.entities.find((e: Item) => e.id === r.event_id)?.title || "Archived event"}
                   <EventSchedule
                     compact
                     event={admin.entities.find((e: Item) => e.id === r.event_id)}
                   />
                 </td>
-                <td>
+                <td data-label="Payment">
                   {r.details.amount > 0 ? money(r.details.amount) : "No payment requested"}
                   <div>
                     <code>{r.details.reference}</code>
                   </div>
                 </td>
-                <td>
+                <td data-label="Status">
                   <Badge tone={r.status === "confirmed" ? "green" : "amber"}>
                     {registrationLabels[r.status] || r.status}
                   </Badge>
                 </td>
-                <td>
+                <td data-label="Action">
                   {r.status !== "confirmed" && (
                     <Button
                       className="small outline"
@@ -1116,10 +1208,14 @@ function EventAttendees({ admin, onUpdate }: { admin: Item; onUpdate: () => void
           </tbody>
         </table>
       </div>
-      {!admin.registrations.length && (
+      {!registrations.length && (
         <Empty
-          title="No registrations yet"
-          description="Attendee details and payment references will appear here."
+          title={admin.registrations.length ? "No matching registrations" : "No registrations yet"}
+          description={
+            admin.registrations.length
+              ? "Choose another status or event, or clear your search."
+              : "Attendee details and payment references will appear here."
+          }
         />
       )}
       <Dialog
@@ -1274,7 +1370,8 @@ function Vouchers() {
   const items = data.entities
     .filter(
       (i: Item) =>
-        i.kind === "vouchers" && (!i.expires || i.expires >= new Date().toISOString().slice(0, 10)),
+        i.kind === "vouchers" &&
+        (!i.expires || i.expires >= new Date(Date.now() + 2 * 3600000).toISOString().slice(0, 10)),
     )
     .filter((i: Item) =>
       (i.title + " " + i.business + " " + i.category).toLowerCase().includes(query.toLowerCase()),
@@ -2177,7 +2274,7 @@ function SignIn() {
         <small>Voucher benefits become available after your membership payment is verified.</small>
         {!signup && (
           <details className="legacy-signin">
-            <summary>Already have an account from the earlier demo?</summary>
+            <summary>Already have an account linked to ChatGPT?</summary>
             <p>
               Use your previous sign-in once, then set a password under My details to keep your
               existing membership and history.
@@ -2331,7 +2428,7 @@ function Upload({ value, onChange }: any) {
           }}
         />
       </label>
-      <small>JPEG, PNG or WebP · up to 5 MB</small>
+      <small>Public business or event images only · JPEG, PNG or WebP · up to 5 MB</small>
     </div>
   );
 }
@@ -2559,7 +2656,7 @@ function Member() {
           {member.registrations.length ? (
             <div className="cards-grid">
               {member.registrations.map((r: Item) => {
-                const item = data.entities.find((i: Item) => i.id === r.event_id);
+                const item = r.event || data.entities.find((i: Item) => i.id === r.event_id);
                 return item ? (
                   <div className="registered-event" key={r.id}>
                     <Badge tone={r.status === "confirmed" ? "green" : "amber"}>
@@ -3178,6 +3275,7 @@ function Admin() {
   const [remove, setRemove] = useState<Item | null>(null);
   const [query, setQuery] = useState("");
   const [key, setKey] = useState("");
+  const [navOpen, setNavOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const alias: Record<string, string> = {
     contact: "overview",
@@ -3186,10 +3284,23 @@ function Admin() {
     shop: "overview",
   };
   const rawTab = search.get("tab") || path.split("/")[2] || "overview";
-  const tab = alias[rawTab] || rawTab;
+  const mappedTab = alias[rawTab] || rawTab;
+  const tab = adminNav.some(([id]) => id === mappedTab) ? mappedTab : "overview";
+  const contentStatus = search.get("status") || "all";
+  const requestKind = search.get("kind") || "";
+  const requestStatus = search.get("status") || "all";
+  useEffect(() => {
+    setQuery("");
+  }, [tab]);
+  useEffect(() => {
+    setNavOpen(false);
+  }, [tab, contentStatus, requestKind]);
   const load = () =>
     api("/admin")
-      .then(setAdmin)
+      .then((value) => {
+        setAdmin(value);
+        setError("");
+      })
       .catch((e: any) => setError(e.message));
   useEffect(() => {
     setAdmin(null);
@@ -3225,7 +3336,7 @@ function Admin() {
             <p>
               {session.adminConfigured
                 ? "This area is available to approved administrators."
-                : "Enter the private setup code supplied with this demo to appoint your signed-in account as the administrator."}
+                : "Enter the private setup code supplied by the site owner to appoint your signed-in account as the administrator."}
             </p>
             {!session.adminConfigured && (
               <form
@@ -3285,7 +3396,7 @@ function Admin() {
     const quote = (v: any) =>
       '"' +
       String(v ?? "")
-        .replace(/^[=+@-]/, "'$&")
+        .replace(/^[\s]*[=+@-]/, "'$&")
         .replace(/"/g, '""') +
       '"';
     const csv = [
@@ -3304,14 +3415,67 @@ function Admin() {
     <div className="admin-shell">
       <aside className="admin-sidebar">
         <Logo />
-        <span className="sidebar-label">COMMUNITY MANAGEMENT</span>
-        <nav aria-label="Admin navigation">
-          {adminNav.map(([id, label, Icon]) => (
-            <AppLink key={id} href={"/admin?tab=" + id} className={tab === id ? "selected" : ""}>
-              <Icon size={18} />
-              {label}
-              {id === "requests" && pending.length > 0 && <b>{pending.length}</b>}
-            </AppLink>
+        <button
+          type="button"
+          className="admin-menu-toggle"
+          aria-expanded={navOpen}
+          aria-controls="admin-navigation"
+          onClick={() => setNavOpen(!navOpen)}
+        >
+          <Menu size={20} />
+          <span>Admin menu</span>
+          <ChevronDown size={18} />
+        </button>
+        <nav
+          id="admin-navigation"
+          aria-label="Admin navigation"
+          className={navOpen ? "is-open" : ""}
+        >
+          {[
+            ["Workspace", ["overview"]],
+            ["Events & attendance", ["events", "registrations"]],
+            ["People & support", ["members", "businesses", "requests", "sponsors"]],
+            ["Offers & activity", ["vouchers", "redemptions", "activity"]],
+          ].map(([group, ids]) => (
+            <div className="admin-nav-group" key={String(group)}>
+              <span className="admin-nav-label">{group}</span>
+              {adminNav
+                .filter(([id]) => (ids as string[]).includes(id))
+                .map(([id, label, Icon]) => (
+                  <div key={id}>
+                    <AppLink
+                      href={"/admin?tab=" + id}
+                      className={tab === id ? "selected" : ""}
+                      aria-current={tab === id ? "page" : undefined}
+                    >
+                      <Icon size={18} />
+                      <span>{label}</span>
+                      {id === "requests" && pending.length > 0 && <b>{pending.length}</b>}
+                      {id === "registrations" && !!admin?.registrations.length && (
+                        <b>{admin.registrations.length}</b>
+                      )}
+                    </AppLink>
+                    {id === "registrations" && tab === "registrations" && (
+                      <div className="admin-subnav">
+                        {Object.entries(registrationLabels).map(([value, label]) => (
+                          <AppLink
+                            key={value}
+                            href={"/admin?tab=registrations&status=" + value}
+                            className={contentStatus === value ? "selected" : ""}
+                            aria-current={contentStatus === value ? "page" : undefined}
+                          >
+                            <span>{label}</span>
+                            <b>
+                              {admin?.registrations.filter((r: Item) => r.status === value)
+                                .length || 0}
+                            </b>
+                          </AppLink>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+            </div>
           ))}
         </nav>
         <div className="sidebar-bottom">
@@ -3337,12 +3501,20 @@ function Admin() {
           <span>
             So Love Krugersdorp <ChevronRight size={14} /> {title}
           </span>
-          <Badge>NEW DEMO</Badge>
+          <Badge>Admin portal</Badge>
           <AppLink href="/" className="text-link">
             View website <ArrowUpRight size={16} />
           </AppLink>
         </div>
         <main id="main-content" className="admin-content">
+          {admin && error && (
+            <div className="notice" role="alert">
+              {error}
+              <button className="text-link" onClick={load}>
+                Try again
+              </button>
+            </div>
+          )}
           <div className="admin-heading">
             <div>
               <Eyebrow>YOUR COMMUNITY AT A GLANCE</Eyebrow>
@@ -3510,6 +3682,27 @@ function Admin() {
               )}
               {contentTab && (
                 <>
+                  <nav className="admin-status-filters" aria-label="Content status">
+                    {["all", "published", "draft", "pending", "archived"].map((value) => (
+                      <AppLink
+                        key={value}
+                        href={"/admin?tab=" + tab + "&status=" + value}
+                        className={contentStatus === value ? "selected" : ""}
+                        aria-current={contentStatus === value ? "page" : undefined}
+                      >
+                        {value === "all" ? "Current items" : value}
+                        <b>
+                          {
+                            admin.entities.filter(
+                              (e: Item) =>
+                                e.kind === tab &&
+                                (value === "all" ? e.status !== "archived" : e.status === value),
+                            ).length
+                          }
+                        </b>
+                      </AppLink>
+                    ))}
+                  </nav>
                   <div className="table-toolbar">
                     <div className="search-control">
                       <Search size={17} />
@@ -3521,42 +3714,9 @@ function Admin() {
                       />
                     </div>
                     {tab === "events" && (
-                      <Button
-                        className="outline"
-                        onClick={() =>
-                          exportCSV(
-                            admin.registrations.map((r: Item) => ({
-                              event:
-                                admin.entities.find((e: Item) => e.id === r.event_id)?.title ||
-                                r.event_id,
-                              name:
-                                r.details.name ||
-                                admin.users.find((u: Item) => u.id === r.user_id)?.name,
-                              email:
-                                r.details.email ||
-                                admin.users.find((u: Item) => u.id === r.user_id)?.email,
-                              phone: r.details.phone,
-                              business: r.details.business,
-                              status: r.status,
-                              amount: r.details.amount,
-                              reference: r.details.reference,
-                              event_date:
-                                admin.entities.find((e: Item) => e.id === r.event_id)?.date ||
-                                "Date to be announced",
-                              event_time:
-                                admin.entities.find((e: Item) => e.id === r.event_id)?.time ||
-                                "Time to be announced",
-                              venue:
-                                admin.entities.find((e: Item) => e.id === r.event_id)?.location ||
-                                "Venue to be announced",
-                              registered: r.created_at,
-                            })),
-                            "event-registrations",
-                          )
-                        }
-                      >
-                        <Download size={16} />
-                        Attendees
+                      <Button href="/admin?tab=registrations" className="outline">
+                        <Users size={17} />
+                        View registrations
                       </Button>
                     )}
                     <Button
@@ -3594,7 +3754,9 @@ function Admin() {
                           .filter(
                             (i: Item) =>
                               i.kind === tab &&
-                              i.status !== "archived" &&
+                              (contentStatus === "all"
+                                ? i.status !== "archived"
+                                : i.status === contentStatus) &&
                               i.title.toLowerCase().includes(query.toLowerCase()),
                           )
                           .map((i: Item) => (
@@ -3652,7 +3814,42 @@ function Admin() {
                   </div>
                 </>
               )}
-              {tab === "events" && <EventAttendees admin={admin} onUpdate={load} />}
+              {tab === "registrations" && (
+                <EventAttendees
+                  admin={admin}
+                  onUpdate={load}
+                  onExport={(rows) =>
+                    exportCSV(
+                      rows.map((r: Item) => ({
+                        name:
+                          r.details.name || admin.users.find((u: Item) => u.id === r.user_id)?.name,
+                        email:
+                          r.details.email ||
+                          admin.users.find((u: Item) => u.id === r.user_id)?.email,
+                        phone: r.details.phone,
+                        business: r.details.business,
+                        event:
+                          admin.entities.find((e: Item) => e.id === r.event_id)?.title ||
+                          "Archived event",
+                        date:
+                          admin.entities.find((e: Item) => e.id === r.event_id)?.date ||
+                          "Date to be announced",
+                        time:
+                          admin.entities.find((e: Item) => e.id === r.event_id)?.time ||
+                          "Time to be announced",
+                        venue:
+                          admin.entities.find((e: Item) => e.id === r.event_id)?.location ||
+                          "Venue to be announced",
+                        status: registrationLabels[r.status] || r.status,
+                        amount: r.details.amount,
+                        reference: r.details.reference,
+                        registered: r.created_at,
+                      })),
+                      "event-registrations",
+                    )
+                  }
+                />
+              )}
               {tab === "members" && (
                 <>
                   <div className="table-toolbar">
@@ -3722,16 +3919,38 @@ function Admin() {
               )}
               {tab === "requests" && (
                 <>
+                  <nav className="admin-status-filters" aria-label="Request status">
+                    {["all", "new", "contacted", "verified", "closed"].map((value) => (
+                      <AppLink
+                        key={value}
+                        href={"/admin?tab=requests&kind=" + requestKind + "&status=" + value}
+                        className={requestStatus === value ? "selected" : ""}
+                        aria-current={requestStatus === value ? "page" : undefined}
+                      >
+                        {value === "all" ? "All statuses" : value}
+                        <b>
+                          {
+                            admin.submissions.filter(
+                              (r: Item) =>
+                                (!requestKind || r.kind === requestKind) &&
+                                (value === "all" || r.status === value),
+                            ).length
+                          }
+                        </b>
+                      </AppLink>
+                    ))}
+                  </nav>
                   <div className="table-toolbar">
                     <div className="filters">
                       {["", "membership", "donation", "sponsor", "contact"].map((f) => (
-                        <button
+                        <AppLink
                           key={f}
-                          onClick={() => setQuery(f)}
-                          className={query === f ? "selected" : ""}
+                          href={"/admin?tab=requests&kind=" + f + "&status=" + requestStatus}
+                          className={requestKind === f ? "selected" : ""}
+                          aria-current={requestKind === f ? "page" : undefined}
                         >
                           {f || "All requests"}
-                        </button>
+                        </AppLink>
                       ))}
                     </div>
                     <Button
@@ -3765,7 +3984,11 @@ function Admin() {
                       </thead>
                       <tbody>
                         {admin.submissions
-                          .filter((s: Item) => !query || s.kind === query)
+                          .filter(
+                            (s: Item) =>
+                              (!requestKind || s.kind === requestKind) &&
+                              (requestStatus === "all" || s.status === requestStatus),
+                          )
                           .map((s: Item) => {
                             const d = JSON.parse(s.data);
                             return (
@@ -3926,7 +4149,7 @@ function Admin() {
             <DialogDescription>
               {editor?.kind === "request"
                 ? "Review the details and update the request."
-                : "Your changes will be saved to this independent demo."}
+                : "Your changes will be saved to the community website."}
             </DialogDescription>
           </DialogHeader>
           {editor && (
@@ -3983,6 +4206,7 @@ function Admin() {
                   <div className="notice">
                     Only activate membership after confirming payment independently.
                   </div>
+                  <AdminRecovery key={editor.id} userId={editor.id} />
                 </>
               ) : editor.kind === "request" ? (
                 <>
@@ -4211,11 +4435,13 @@ function Privacy() {
         </p>
         <p>
           Account and payment-verification information is accessible to authorised administrators.
-          No card details are collected by this demo.
+          We do not collect or store card details. EFT payments are checked by the team before paid
+          access or event attendance is confirmed.
         </p>
         <p>
-          Contact the SLKD team to request a correction or discuss removing your information. This
-          demo privacy notice must be reviewed by the organisation before a public launch.
+          Contact the SLKD team to request a correction or discuss removing your information. You
+          can also ask how your information is used or request account closure through the contact
+          page.
         </p>
         <Button href="/contact">Contact the team</Button>
       </div>
@@ -4226,7 +4452,10 @@ export default function Platform() {
   const loc = useLocation();
   const path = loc.pathname;
   const search = new URLSearchParams(loc.searchStr);
-  const [data, setData] = useState<any>({ settings: defaultSettings, entities: initialEntities });
+  const [data, setData] = useState<any>({
+    settings: defaultSettings,
+    entities: initialEntities.filter((e) => e.status === "published" && !("demo" in e && e.demo)),
+  });
   const [session, setSession] = useState<any>({
     user: null,
     signedIn: false,
@@ -4255,7 +4484,16 @@ export default function Platform() {
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
   }, []);
   const admin = path.startsWith("/admin");
-  let page = <Home />;
+  let page =
+    path === "/" ? (
+      <Home />
+    ) : (
+      <section className="page-wrap">
+        <h1>Page not found</h1>
+        <p>This page may have moved. Return to the community to continue.</p>
+        <Button href="/">Back to home</Button>
+      </section>
+    );
   if (path === "/events" || path === "/app/events" || path === "/app/breakfast") page = <Events />;
   else if (path === "/about") page = <About />;
   else if (path === "/vouchers" || path.startsWith("/app/voucher")) page = <Vouchers />;
@@ -4266,6 +4504,7 @@ export default function Platform() {
   else if (path === "/donate") page = <Giving kind="donation" />;
   else if (path === "/contact") page = <Contact />;
   else if (path === "/privacy") page = <Privacy />;
+  else if (path === "/reset-password") page = <PasswordRecovery />;
   else if (
     path === "/member" ||
     path === "/login" ||

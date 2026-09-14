@@ -10,7 +10,7 @@ import {
   cookie,
   readCookie,
 } from "./auth";
-type Env = { DB: any; BUCKET: any; ADMIN_BOOTSTRAP_KEY?: string };
+type Env = { DB: any; BUCKET: any; ADMIN_BOOTSTRAP_KEY?: string; TRUST_SITES_IDENTITY?: string };
 const json = (data: unknown, status = 200) =>
   Response.json(data, {
     status,
@@ -18,8 +18,9 @@ const json = (data: unknown, status = 200) =>
   });
 const uid = () => crypto.randomUUID();
 const now = () => new Date().toISOString();
+const today = () => new Date(Date.now() + 2 * 3600000).toISOString().slice(0, 10);
 const active = (u: any) =>
-  u && !u.disabled && u.membership === "active" && (!u.expires || u.expires >= now().slice(0, 10));
+  u && !u.disabled && u.membership === "active" && (!u.expires || u.expires >= today());
 const fail = (message: string, status = 400): never => {
   throw Object.assign(new Error(message), { status });
 };
@@ -30,6 +31,51 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
   try {
     if (!env.DB)
       return json({ error: "The database is not available yet. Please try again shortly." }, 503);
+    const mutation = !["GET", "HEAD"].includes(request.method);
+    if (mutation && request.method !== "POST") fail("Method not allowed.", 405);
+    if (mutation) {
+      if (request.headers.get("origin") !== new URL(request.url).origin)
+        fail("This request could not be verified.", 403);
+      const maximum = path === "/upload" ? 5500000 : 32000;
+      if (Number(request.headers.get("content-length") || 0) > maximum)
+        fail("This request is too large.", 413);
+      const reader = request.body?.getReader();
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      if (reader)
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          size += value.byteLength;
+          if (size > maximum) {
+            await reader.cancel();
+            fail("This request is too large.", 413);
+          }
+          chunks.push(value);
+        }
+      const bytes = new Uint8Array(size);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      request = new Request(request.url, {
+        method: request.method,
+        headers: request.headers,
+        body: bytes,
+      });
+      const type = request.headers.get("content-type") || "";
+      if (path !== "/upload" && path !== "/auth/legacy") {
+        if (!type.startsWith("application/json")) fail("Send a JSON request.", 415);
+        try {
+          const body = JSON.parse(new TextDecoder().decode(bytes));
+          if (!body || Array.isArray(body) || typeof body !== "object")
+            fail("Enter valid request details.");
+        } catch {
+          fail("Enter valid request details.");
+        }
+      }
+    }
     const db = env.DB;
     const all = async (sql: string, ...v: any[]) =>
       (
@@ -57,6 +103,18 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
         target,
         now(),
       );
+    const throttle = async (subject: string, limit: number, seconds = 900) => {
+      const stamp = Date.now();
+      const attempt = await one(
+        "INSERT INTO auth_attempts(key,count,expires_at) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET count=CASE WHEN expires_at<=? THEN 1 ELSE count+1 END, expires_at=CASE WHEN expires_at<=? THEN ? ELSE expires_at END RETURNING count",
+        await digest(subject),
+        stamp + seconds * 1000,
+        stamp,
+        stamp,
+        stamp + seconds * 1000,
+      );
+      if (attempt.count > limit) fail("Too many requests. Please try again later.", 429);
+    };
     const initialized = await one("SELECT id FROM settings WHERE id='main'");
     if (!initialized) {
       await db.batch([
@@ -70,8 +128,21 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
           .bind(JSON.stringify(defaultSettings)),
       ]);
     }
+    // One-time release cleanup preserves all member history and any edited real offers.
+    if (!(await one("SELECT id FROM settings WHERE id='launch-content-v1'"))) {
+      await db.batch([
+        db
+          .prepare(
+            "UPDATE entities SET data=json_set(data,'$.status','draft'),updated_at=? WHERE json_extract(data,'$.demo')=1",
+          )
+          .bind(now()),
+        db.prepare("INSERT OR IGNORE INTO settings(id,data) VALUES('launch-content-v1','{}')"),
+      ]);
+    }
     const srow = await one("SELECT data FROM settings WHERE id='main'");
     const settings = srow ? { ...defaultSettings, ...JSON.parse(srow.data) } : defaultSettings;
+    settings.bankName ||= defaultSettings.bankName;
+    settings.bankAccount ||= defaultSettings.bankAccount;
     const rows = await all("SELECT id,kind,data FROM entities");
     const entities = rows.map((r: any) => ({ ...JSON.parse(r.data), id: r.id, kind: r.kind }));
     // Seed examples are read-only until an admin explicitly imports them.
@@ -87,16 +158,28 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
     // An explicit app session/sign-out overrides any legacy platform identity.
     const identity =
       savedSession?.user_id ||
-      (!sessionToken && !readCookie(request, SIGNED_OUT_COOKIE)
+      (env.TRUST_SITES_IDENTITY === "true" &&
+      !sessionToken &&
+      !readCookie(request, SIGNED_OUT_COOKIE)
         ? request.headers.get("oai-authenticated-user-id")
         : null);
-    let user = identity ? await one("SELECT * FROM users WHERE id=?", identity) : null;
-    if (request.method !== "GET" && request.method !== "HEAD") {
+    const user = identity ? await one("SELECT * FROM users WHERE id=?", identity) : null;
+    if (mutation) {
       const origin = request.headers.get("origin");
       if (!origin || origin !== new URL(request.url).origin)
         fail("This request could not be verified.", 403);
-      if (Number(request.headers.get("content-length") || 0) > 6000000)
-        fail("The file is too large.", 413);
+      if (!["/auth/login", "/auth/signup", "/auth/password"].includes(path))
+        await throttle(
+          "write:" + (user?.id || request.headers.get("cf-connecting-ip") || "anonymous"),
+          120,
+        );
+    }
+    const readPaths = ["/session", "/public", "/wallet", "/member", "/registration", "/admin"];
+    if (readPaths.includes(path) && request.method !== "GET") fail("Method not allowed.", 405);
+    if (path.startsWith("/admin/") && request.method !== "POST") fail("Method not allowed.", 405);
+    if (path === "/health" && request.method === "GET") {
+      await one("SELECT 1 AS ok");
+      return json({ ok: true });
     }
     const mustUser = () => {
       if (!identity || !user) fail("Please sign in to continue.", 401);
@@ -111,8 +194,9 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
       const redeemBy =
         c.redeem_by || new Date(Date.parse(c.created_at) + 48 * 3600000).toISOString();
       const voucher = catalog.find((e: any) => e.id === c.voucher_id && e.kind === "vouchers");
-      const reason =
-        c.status !== "available"
+      const reason = voucher?.demo
+        ? "This demonstration offer is not valid for redemption."
+        : c.status !== "available"
           ? "This voucher has already been redeemed."
           : redeemBy <= now()
             ? "The redemption window has expired."
@@ -120,7 +204,7 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
               ? "An active membership is required to redeem."
               : !voucher || voucher.status !== "published"
                 ? "This offer is no longer available."
-                : voucher.expires && voucher.expires < now().slice(0, 10)
+                : voucher.expires && voucher.expires < today()
                   ? "This voucher has expired."
                   : "";
       return {
@@ -146,16 +230,16 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
         demo: !!view.voucher.demo,
       };
       const result = await run(
-        "UPDATE claims SET status='redeemed',redeemed_at=?,receipt=? WHERE id=? AND user_id=? AND status='available' AND coalesce(redeem_by,strftime('%Y-%m-%dT%H:%M:%fZ',created_at,'+48 hours'))>? AND EXISTS(SELECT 1 FROM users WHERE id=? AND disabled=0 AND membership='active' AND (expires IS NULL OR expires>=?)) AND EXISTS(SELECT 1 FROM entities WHERE id=? AND json_extract(data,'$.status')='published' AND (coalesce(json_extract(data,'$.expires'),'')='' OR json_extract(data,'$.expires')>=?))",
+        "UPDATE claims SET status='redeemed',redeemed_at=?,receipt=? WHERE id=? AND user_id=? AND status='available' AND coalesce(redeem_by,strftime('%Y-%m-%dT%H:%M:%fZ',created_at,'+48 hours'))>? AND EXISTS(SELECT 1 FROM users WHERE id=? AND disabled=0 AND membership='active' AND (expires IS NULL OR expires>=?)) AND EXISTS(SELECT 1 FROM entities WHERE id=? AND json_extract(data,'$.status')='published' AND coalesce(json_extract(data,'$.demo'),0)=0 AND (coalesce(json_extract(data,'$.expires'),'')='' OR json_extract(data,'$.expires')>=?))",
         timestamp,
         JSON.stringify(receipt),
         c.id,
         owner.id,
         timestamp,
         owner.id,
-        timestamp.slice(0, 10),
+        today(),
         c.voucher_id,
-        timestamp.slice(0, 10),
+        today(),
       );
       if (!result.meta.changes)
         fail("This voucher has already been redeemed or is no longer valid.", 409);
@@ -219,6 +303,39 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
       response.headers.append("Set-Cookie", cookie(SIGNED_OUT_COOKIE, "", 0));
       return response;
     };
+    if (path === "/auth/reset" && request.method === "POST") {
+      const b = (await request.json()) as any;
+      await throttle("reset:" + (request.headers.get("cf-connecting-ip") || "anonymous"), 10);
+      if (typeof b.token !== "string" || !/^[a-f0-9]{64}$/.test(b.token))
+        fail("This recovery link is invalid or expired.", 400);
+      if (typeof b.password !== "string" || b.password.length < 12 || b.password.length > 256)
+        fail("Use a password of 12 to 256 characters.");
+      const hash = await digest(b.token);
+      const reset = await one(
+        "SELECT r.user_id FROM password_resets r JOIN users u ON u.id=r.user_id WHERE token_hash=? AND consumed=0 AND expires_at>? AND u.disabled=0",
+        hash,
+        Date.now(),
+      );
+      if (!reset) fail("This recovery link is invalid or expired.", 400);
+      const salt = randomToken();
+      const password = await passwordHash(b.password, salt);
+      const timestamp = Date.now();
+      const result = await db.batch([
+        db
+          .prepare(
+            "INSERT INTO credentials(user_id,email,salt,password_hash) SELECT u.id,lower(u.email),?,? FROM users u JOIN password_resets r ON r.user_id=u.id WHERE r.token_hash=? AND r.consumed=0 AND r.expires_at>? AND u.disabled=0 ON CONFLICT(user_id) DO UPDATE SET salt=excluded.salt,password_hash=excluded.password_hash",
+          )
+          .bind(salt, password, hash, timestamp),
+        db
+          .prepare("UPDATE password_resets SET consumed=1 WHERE token_hash=? AND expires_at>?")
+          .bind(hash, timestamp),
+        db.prepare("DELETE FROM sessions WHERE user_id=?").bind(reset.user_id),
+      ]);
+      if (!result[0].meta.changes)
+        fail("This recovery link has already been used or expired.", 409);
+      await log(reset.user_id, "account.recovered", reset.user_id);
+      return json({ ok: true });
+    }
     if (path === "/auth/legacy" && request.method === "POST") {
       const form = await request.formData();
       const returnTo = form.get("returnTo") === "/admin" ? "/admin" : "/member?tab=profile";
@@ -348,7 +465,7 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
           donationIntro: settings.donationIntro,
         },
         entities: catalog
-          .filter((e: any) => e.status === "published")
+          .filter((e: any) => e.status === "published" && !e.demo)
           .map((e: any) => {
             if (e.kind === "businesses" && !e.publicContact && !active(user)) {
               const { email, phone, ...rest } = e;
@@ -363,7 +480,9 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
       let name = "";
       try {
         name = decodeURIComponent(raw);
-      } catch {}
+      } catch {
+        name = "Community member";
+      }
       await run(
         "INSERT OR IGNORE INTO users(id,email,name,created_at) VALUES(?,?,?,?)",
         identity,
@@ -376,7 +495,8 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
     if (path === "/bootstrap" && request.method === "POST") {
       mustUser();
       const b = (await request.json()) as any;
-      if (!env.ADMIN_BOOTSTRAP_KEY || b.key !== env.ADMIN_BOOTSTRAP_KEY)
+      await throttle("bootstrap:" + (request.headers.get("cf-connecting-ip") || user.id), 5);
+      if (!env.ADMIN_BOOTSTRAP_KEY || !equalHash(String(b.key || ""), env.ADMIN_BOOTSTRAP_KEY))
         fail("The setup code is incorrect.", 403);
       const exists = await one("SELECT id FROM users WHERE role='admin' LIMIT 1");
       if (exists && exists.id !== user.id)
@@ -396,7 +516,11 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
           await all("SELECT * FROM claims WHERE user_id=? ORDER BY created_at DESC", user.id)
         ).map((c: any) => claimView(c, user)),
         registrations: (await all("SELECT * FROM registrations WHERE user_id=?", user.id)).map(
-          (r: any) => ({ ...r, details: JSON.parse(r.details || "{}") }),
+          (r: any) => ({
+            ...r,
+            details: JSON.parse(r.details || "{}"),
+            event: catalog.find((e: any) => e.kind === "events" && e.id === r.event_id) || null,
+          }),
         ),
         businesses: catalog.filter((e: any) => e.kind === "businesses" && e.ownerId === user.id),
         submissions: await all(
@@ -458,10 +582,10 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
       if (!active(user)) fail("Activate your paid membership before claiming vouchers.", 403);
       const b = (await request.json()) as any;
       const v = catalog.find(
-        (e: any) => e.id === b.id && e.kind === "vouchers" && e.status === "published",
+        (e: any) => e.id === b.id && e.kind === "vouchers" && e.status === "published" && !e.demo,
       );
       if (!v) fail("This voucher is no longer available.", 404);
-      if (v.expires && v.expires < now().slice(0, 10)) fail("This voucher has expired.");
+      if (v.expires && v.expires < today()) fail("This voucher has expired.");
       const id = uid(),
         code = "SLK-" + uid().replace(/-/g, "").slice(0, 12).toUpperCase();
       const createdAt = now();
@@ -472,7 +596,7 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
           ? Number(v.redeemHours)
           : 48;
       const windowEnd = Date.parse(createdAt) + hours * 3600000;
-      const offerEnd = v.expires ? Date.parse(v.expires + "T23:59:59.999Z") : Infinity;
+      const offerEnd = v.expires ? Date.parse(v.expires + "T23:59:59.999+02:00") : Infinity;
       const redeemBy = new Date(
         Math.min(windowEnd, Number.isFinite(offerEnd) ? offerEnd : Infinity),
       ).toISOString();
@@ -513,7 +637,7 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
         (e: any) => e.id === b.id && e.kind === "events" && e.status === "published",
       );
       if (!e) fail("This event is unavailable.", 404);
-      if (e.date && e.date < now().slice(0, 10)) fail("Registration has closed.");
+      if (e.date && e.date < today()) fail("Registration has closed.");
       const name = clean(b.name, 120),
         email = clean(b.email, 200).toLowerCase(),
         phone = clean(b.phone, 40);
@@ -592,10 +716,15 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
         fail("Please enter your name and a valid email address.");
       if (b.consent !== true) fail("Please agree to the use of your details for this request.");
       if (b.kind === "membership" && active(user)) fail("Your membership is already active.");
+      await throttle("submission-email:" + clean(b.email, 200).toLowerCase(), 5);
+      await throttle(
+        "submission-ip:" + (request.headers.get("cf-connecting-ip") || user?.id || "anonymous"),
+        15,
+      );
       const existing = await one(
-        "SELECT id FROM submissions WHERE kind=? AND user_id=? AND status='new' AND created_at > ?",
+        "SELECT id FROM submissions WHERE kind=? AND lower(json_extract(data,'$.email'))=? AND status='new' AND created_at > ?",
         b.kind,
-        user?.id || "",
+        clean(b.email, 200).toLowerCase(),
         new Date(Date.now() - 60000).toISOString(),
       );
       if (existing)
@@ -642,10 +771,14 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
     }
     if (path === "/upload" && request.method === "POST") {
       mustUser();
+      if (user.role !== "admin" && !active(user))
+        fail("An active membership is required to upload business images.", 403);
+      await throttle("upload:" + user.id, 20, 3600);
       if (!env.BUCKET) fail("Image uploads are temporarily unavailable.", 503);
       const form = await request.formData();
       const file = form.get("file");
       if (!(file instanceof File)) return json({ error: "Please choose an image." }, 400);
+      if (!file.size) fail("Please choose a non-empty image.");
       if (file.size > 5000000) fail("Please choose an image smaller than 5 MB.");
       const bytes = new Uint8Array(await file.arrayBuffer());
       let type = "";
@@ -689,6 +822,27 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
           settings,
         });
       const b = (await request.json()) as any;
+      if (path === "/admin/password-reset") {
+        if (b.identityVerified !== true)
+          fail("Verify the member's identity before creating a recovery link.");
+        await throttle("admin-reset:" + user.id, 10);
+        const target = await one(
+          "SELECT id,email,disabled FROM users WHERE id=?",
+          clean(b.id, 100),
+        );
+        if (!target || target.disabled || !target.email)
+          fail("An enabled account with an email address is required.");
+        const token = randomToken();
+        const expiresAt = Date.now() + 15 * 60000;
+        await run(
+          "INSERT INTO password_resets(token_hash,user_id,expires_at,consumed) VALUES(?,?,?,0) ON CONFLICT(user_id) DO UPDATE SET token_hash=excluded.token_hash,expires_at=excluded.expires_at,consumed=0",
+          await digest(token),
+          target.id,
+          expiresAt,
+        );
+        await log(user.id, "account.recovery_created", target.id);
+        return json({ token, expiresAt });
+      }
       if (path === "/admin/registration") {
         const registration = await one("SELECT * FROM registrations WHERE id=?", clean(b.id, 100));
         if (!registration) fail("Registration not found.", 404);
@@ -732,7 +886,30 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
           (!Number.isInteger(redeemHours) || redeemHours < 1 || redeemHours > 8760)
         )
           fail("Enter a whole number from 1 to 8760 for redemption hours.");
-        const id = b.id || uid();
+        if (b.kind === "vouchers" && b.demo === true && b.status === "published")
+          fail("Demonstration offers cannot be published. Enter a real approved offer first.");
+        for (const key of ["date", "expires"]) {
+          if (
+            b[key] &&
+            (!/^\d{4}-\d{2}-\d{2}$/.test(b[key]) ||
+              !Number.isFinite(Date.parse(b[key])) ||
+              new Date(b[key]).toISOString().slice(0, 10) !== b[key])
+          )
+            fail("Enter a valid calendar date.");
+        }
+        if (b.time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(b.time)) fail("Enter a valid event time.");
+        for (const key of ["capacity", "limit", "price"]) {
+          if (
+            b[key] !== undefined &&
+            b[key] !== "" &&
+            (!Number.isFinite(Number(b[key])) || Number(b[key]) < 0 || Number(b[key]) > 10000000)
+          )
+            fail("Enter a valid price or quantity.");
+        }
+        const id = clean(b.id, 100) || uid();
+        const existingEntity = catalog.find((e: any) => e.id === id);
+        if (existingEntity && existingEntity.kind !== b.kind)
+          fail("The content type cannot be changed.");
         const data = {
           id,
           kind: b.kind,
@@ -787,6 +964,13 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
         if (b.id === user.id && b.disabled) fail("You cannot pause your own admin account.");
         if (!["inactive", "pending", "active"].includes(b.membership))
           fail("Choose a valid membership status.");
+        if (
+          b.membership === "active" &&
+          (!/^\d{4}-\d{2}-\d{2}$/.test(b.expires || "") ||
+            !Number.isFinite(Date.parse(b.expires)) ||
+            b.expires < today())
+        )
+          fail("Active membership requires a valid future expiry date.");
         const target = await one("SELECT id FROM users WHERE id=?", b.id);
         if (!target) fail("Member not found.", 404);
         await run(
@@ -804,8 +988,9 @@ export async function handleAPI(request: Request, env: Env): Promise<Response> {
           fail("Choose a valid request status.");
         const sub = await one("SELECT * FROM submissions WHERE id=?", b.id);
         if (!sub) fail("Request not found.", 404);
+        if (sub.status === "verified") fail("This payment has already been verified.", 409);
         if (b.status === "verified" && sub.kind === "membership" && sub.user_id) {
-          if (!b.paymentConfirmed)
+          if (b.paymentConfirmed !== true)
             fail("Confirm that the payment has been independently verified.");
           const expiry = new Date();
           expiry.setFullYear(expiry.getFullYear() + 1);

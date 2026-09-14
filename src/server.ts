@@ -1,5 +1,6 @@
-import {env as cloudflareEnv} from "cloudflare:workers";
-import {handleAPI} from "./platform/api";
+import { env as cloudflareEnv } from "cloudflare:workers";
+import { handleAPI } from "./platform/api";
+import { siteOrigin, publicPages } from "./platform/seo";
 import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
@@ -68,16 +69,55 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
   return brandedErrorResponse();
 }
 
+function secure(response: Response, path: string) {
+  const headers = new Headers(response.headers);
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  headers.set("Strict-Transport-Security", "max-age=31536000");
+  if (!publicPages[path] && path !== "/sitemap.xml" && path !== "/robots.txt")
+    headers.set("X-Robots-Tag", "noindex, nofollow");
+  if ((headers.get("Content-Type") || "").includes("text/html")) {
+    headers.set("Cache-Control", "no-store");
+    headers.set(
+      "Content-Security-Policy",
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https: data: blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self' https://chatgpt.com; upgrade-insecure-requests",
+    );
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
+    const path = new URL(request.url).pathname;
     try {
-      if(new URL(request.url).pathname.startsWith("/api/")) return handleAPI(request,cloudflareEnv as any);
+      if (path === "/robots.txt")
+        return new Response(
+          "User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin\nDisallow: /member\nDisallow: /app\nDisallow: /reset-password\nSitemap: " +
+            siteOrigin +
+            "/sitemap.xml\n",
+          { headers: { "Content-Type": "text/plain; charset=utf-8" } },
+        );
+      if (path === "/sitemap.xml")
+        return new Response(
+          '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' +
+            Object.keys(publicPages)
+              .map((p) => "<url><loc>" + siteOrigin + p + "</loc></url>")
+              .join("") +
+            "</urlset>",
+          { headers: { "Content-Type": "application/xml; charset=utf-8" } },
+        );
+      if (path.startsWith("/api/"))
+        return secure(await handleAPI(request, cloudflareEnv as any), path);
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
-      return await normalizeCatastrophicSsrResponse(response);
+      return secure(await normalizeCatastrophicSsrResponse(response), path);
     } catch (error) {
       console.error(error);
-      return brandedErrorResponse();
+      return secure(brandedErrorResponse(), path);
     }
   },
 };

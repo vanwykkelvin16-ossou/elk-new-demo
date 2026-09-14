@@ -36,6 +36,13 @@
       "when": 1789192575405,
       "tag": "0004_sleepy_reaper",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1789229819558,
+      "tag": "0005_little_boomer",
+      "breakpoints": true
     }
   ]
 }
